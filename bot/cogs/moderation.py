@@ -110,8 +110,16 @@ class Moderation(commands.GroupCog, name="moderasi"):
         if not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message("Perintah ini hanya bisa di channel teks.", ephemeral=True)
             return
-        deleted = await channel.purge(limit=jumlah)
-        await interaction.response.send_message(f"Berhasil menghapus {len(deleted)} pesan.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        try:
+            deleted = await channel.purge(limit=jumlah)
+        except discord.Forbidden:
+            await interaction.followup.send("Saya tidak memiliki izin untuk menghapus pesan di channel ini.", ephemeral=True)
+            return
+        except discord.HTTPException:
+            await interaction.followup.send("Terjadi kesalahan saat menghapus pesan. Coba lagi nanti.", ephemeral=True)
+            return
+        await interaction.followup.send(f"Berhasil menghapus {len(deleted)} pesan.", ephemeral=True)
 
     @app_commands.command(name="warn", description="Memberikan peringatan ke pengguna.")
     async def warn(self, interaction: discord.Interaction, member: discord.Member, alasan: str) -> None:

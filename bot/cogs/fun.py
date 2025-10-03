@@ -59,7 +59,7 @@ class Fun(commands.Cog):
 
     @app_commands.command(name="joke", description="Lelucon acak.")
     async def joke(self, interaction: discord.Interaction) -> None:
-        data = await self._fetch_json("https://v2.jokeapi.dev/joke/Any?lang=es")
+        data = await self._fetch_json("https://v2.jokeapi.dev/joke/Any?lang=en")
         if data.get("type") == "single":
             text = data.get("joke", "Saya tidak punya lelucon kali ini.")
         else:
