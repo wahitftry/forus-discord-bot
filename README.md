@@ -9,7 +9,7 @@ Bot Discord multifungsi berbahasa Indonesia dengan perintah slash (/) berbasis `
 - ⏰ **Pengingat** `/reminder create|list|delete` dengan scheduler asinkron.
 - 🎟️ **Sistem Tiket** `/ticket create|close|add|remove` membuat kanal privat.
 - 🎉 **Hiburan** `/meme`, `/quote`, `/joke`, `/dice`, `/8ball`, `/ship`.
-- 🤖 **Utilitas** `/ping`, `/help`, `/userinfo`, `/serverinfo`, `/botstats`.
+- 🤖 **Utilitas** `/ping`, `/help`, `/userinfo`, `/serverinfo`, `/botstats`, `/jadwalsholat`, `/carijadwalsholat`.
 - 👋 **Event Otomatis** sambutan, perpisahan, autorole, dan filter kata kasar + anti-spam sederhana.
 
 ## Persiapan Lingkungan
@@ -59,7 +59,27 @@ Jalankan seluruh pengujian:
 pytest
 ```
 
-Tes fokus pada lapisan database dan utilitas; perintah Discord diuji manual melalui staging server.
+Tes mencakup lapisan database, utilitas, dan fungsionalitas perintah seperti `/jadwalsholat` maupun `/carijadwalsholat` (dengan mock API). Perintah Discord lain diuji manual melalui staging server.
+
+## Jadwal Sholat
+
+Gunakan perintah `/jadwalsholat` untuk menampilkan jadwal sholat harian.
+
+- **Negara:** pilih *Indonesia* atau *Malaysia*.
+- **Lokasi:**
+  - Indonesia: masukkan ID kota empat digit dari dokumentasi [MyQuran API](https://api.myquran.com/) atau pilih dari auto-complete.
+  - Malaysia: masukkan kode zon seperti `SGR01` sesuai dokumentasi [WaktuSolat API](https://api.waktusolat.app/) atau pilih dari auto-complete.
+- **Tahun/Bulan/Tanggal:** opsional; kosongkan untuk default tanggal hari ini.
+
+Bot akan menampilkan daftar waktu sholat utama dalam embed bersama informasi wilayah dan sumber data.
+
+Untuk mencari ID kota atau kode JAKIM secara cepat, gunakan `/carijadwalsholat`:
+
+- **Negara:** pilih sumber *Indonesia* atau *Malaysia*.
+- **Keyword:** ketik nama kota/daerah; minimal dua karakter.
+- **Batas:** tentukan jumlah hasil (default 10, maksimal 25).
+
+Bot menampilkan hasil dalam embed siap salin, dan kata kunci yang sama juga tersedia lewat auto-complete `/jadwalsholat`.
 
 ## Lisensi
 Proyek ini dirilis dengan lisensi MIT. Silakan modifikasi sesuai kebutuhan komunitas Anda.
