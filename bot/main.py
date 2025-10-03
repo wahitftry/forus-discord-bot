@@ -41,18 +41,7 @@ class ForUS(commands.Bot):
         await self._setup_database()
         self.scheduler.start()
         await self._load_cogs()
-        for guild_id in self.config.guild_ids:
-            try:
-                guild = discord.Object(id=guild_id)
-                self.tree.clear_commands(guild=guild)
-                self.tree.copy_global_to(guild=guild)
-                await self.tree.sync(guild=guild)
-                self.log.info("Sinkronisasi perintah slash untuk guild %s", guild_id)
-            except Exception:  # noqa: BLE001
-                self.log.exception("Gagal sinkronisasi command untuk guild %s", guild_id)
-        if not self.config.guild_ids:
-            await self.tree.sync()
-            self.log.info("Sinkronisasi global perintah slash berhasil")
+        await self._synchronize_commands()
 
     async def close(self) -> None:
         await super().close()
@@ -87,6 +76,55 @@ class ForUS(commands.Bot):
                 self.log.info("Berhasil memuat extension %s", extension)
             except Exception:  # noqa: BLE001
                 self.log.exception("Gagal memuat extension %s", extension)
+
+    async def _synchronize_commands(self) -> None:
+        if self.config.guild_ids:
+            await self._synchronize_guild_commands(self.config.guild_ids)
+            return
+        await self._synchronize_global_commands_only()
+
+    async def _synchronize_guild_commands(self, guild_ids: list[int]) -> None:
+        for guild_id in guild_ids:
+            try:
+                guild = discord.Object(id=guild_id)
+                self.tree.clear_commands(guild=guild)
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                self.log.info("Sinkronisasi perintah slash untuk guild %s", guild_id)
+            except Exception:  # noqa: BLE001
+                self.log.exception("Gagal sinkronisasi command untuk guild %s", guild_id)
+        try:
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
+            self.log.info("Membersihkan perintah global untuk mencegah duplikasi")
+        except Exception:  # noqa: BLE001
+            self.log.exception("Gagal membersihkan perintah global")
+
+    async def _synchronize_global_commands_only(self) -> None:
+        guild_ids: list[int] = []
+        seen_guilds: set[int] = set()
+        try:
+            async for partial_guild in self.fetch_guilds(limit=None):
+                if partial_guild.id not in seen_guilds:
+                    seen_guilds.add(partial_guild.id)
+                    guild_ids.append(partial_guild.id)
+        except Exception:  # noqa: BLE001
+            self.log.exception("Gagal mengambil daftar guild untuk pembersihan command")
+
+        for guild_id in guild_ids:
+            guild = discord.Object(id=guild_id)
+            try:
+                self.tree.clear_commands(guild=guild)
+                await self.tree.sync(guild=guild)
+                self.log.info("Menghapus perintah slash untuk guild %s", guild_id)
+            except Exception:  # noqa: BLE001
+                self.log.exception("Gagal menghapus perintah untuk guild %s", guild_id)
+
+        try:
+            await self.tree.sync()
+            self.log.info("Sinkronisasi perintah slash global selesai setelah pembersihan guild")
+        except Exception:  # noqa: BLE001
+            self.log.exception("Gagal sinkronisasi global perintah slash")
 
 
 async def main() -> None:

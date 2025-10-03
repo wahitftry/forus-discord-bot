@@ -38,7 +38,7 @@ pip install -r requirements.txt
 python -m bot.main
 ```
 
-Sinkronisasi perintah slash terjadi otomatis saat bot online. Jika `DISCORD_GUILD_IDS` diisi, sync hanya ke guild tersebut (lebih cepat). Tanpa itu, sync global (butuh beberapa menit).
+Sinkronisasi perintah slash terjadi otomatis saat bot online. Jika `DISCORD_GUILD_IDS` diisi, sync hanya ke guild tersebut (lebih cepat). Tanpa itu, bot akan membersihkan perintah khusus guild yang tersisa dan hanya mendaftarkan ulang perintah global (butuh beberapa menit).
 
 ## Struktur Proyek
 ```
