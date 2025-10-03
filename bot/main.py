@@ -114,12 +114,12 @@ class ForUS(commands.Bot):
         for guild_id in guild_ids:
             guild = discord.Object(id=guild_id)
             try:
+                self.tree.copy_global_to(guild=guild)
                 self.tree.clear_commands(guild=guild)
-                #self.tree.copy_global_to(guild=guild)
                 await self.tree.sync(guild=guild)
-                self.log.info("Menghapus perintah slash untuk guild %s", guild_id)
+                self.log.info("Sinkronisasi perintah untuk guild %s", guild_id)
             except Exception:  # noqa: BLE001
-                self.log.exception("Gagal menghapus perintah untuk guild %s", guild_id)
+                self.log.exception("Gagal sinkronisasi command untuk guild %s", guild_id)
 
         try:
             await self.tree.sync()
