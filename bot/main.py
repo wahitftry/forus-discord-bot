@@ -85,6 +85,7 @@ class ForUS(commands.Bot):
     async def _load_cogs(self) -> None:
         for extension in (
             "bot.cogs.utility",
+            "bot.cogs.developer",
             "bot.cogs.moderation",
             "bot.cogs.admin",
             "bot.cogs.economy",
