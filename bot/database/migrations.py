@@ -250,3 +250,22 @@ async def run_migrations() -> None:
     db = Database.instance()
     for query in CREATE_TABLE_QUERIES:
         await db.execute(query)
+    await _ensure_guild_settings_activity_columns(db)
+
+
+async def _ensure_guild_settings_activity_columns(db: Database) -> None:
+    columns = await db.fetchall("PRAGMA table_info(guild_settings)")
+    column_names = {row["name"] for row in columns}
+
+    if "activity_log_channel_id" not in column_names:
+        await db.execute("ALTER TABLE guild_settings ADD COLUMN activity_log_channel_id INTEGER")
+
+    if "activity_log_enabled" not in column_names:
+        await db.execute(
+            "ALTER TABLE guild_settings ADD COLUMN activity_log_enabled INTEGER NOT NULL DEFAULT 1"
+        )
+
+    if "activity_log_disabled_events" not in column_names:
+        await db.execute(
+            "ALTER TABLE guild_settings ADD COLUMN activity_log_disabled_events TEXT NOT NULL DEFAULT '[]'"
+        )

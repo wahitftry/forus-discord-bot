@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable, Optional, Sequence, TYPE_CHECKING, Protocol
+from typing import Dict, FrozenSet, Iterable, Optional, Sequence, TYPE_CHECKING, Protocol
 
 import discord
 from discord import app_commands
@@ -15,11 +15,25 @@ if TYPE_CHECKING:
     from bot.main import ForUS
 
 
-__all__ = ["ActivityLogger", "truncate_content", "format_attachments", "format_user"]
+__all__ = [
+    "ActivityLogger",
+    "truncate_content",
+    "format_attachments",
+    "format_user",
+    "ACTIVITY_LOG_CATEGORIES",
+]
 
 
 MAX_CONTENT_LENGTH = 1024
 MAX_ATTACHMENT_DISPLAY = 5
+ACTIVITY_LOG_CATEGORIES: Dict[str, str] = {
+    "messages": "Pesan & Konten",
+    "members": "Anggota",
+    "voice": "Voice & Stage",
+    "server": "Struktur Server",
+    "reactions": "Reaksi",
+    "commands": "Perintah",
+}
 
 
 def truncate_content(content: str, *, limit: int = MAX_CONTENT_LENGTH) -> str:
@@ -75,8 +89,15 @@ def format_user(user: Optional[discord.abc.User], *, fallback: str = "Unknown") 
 
 
 @dataclass(slots=True)
-class _ChannelCacheEntry:
+class _ActivityLogConfig:
     channel_id: Optional[int]
+    enabled: bool
+    disabled_categories: FrozenSet[str]
+
+    def allows(self, category: str) -> bool:
+        if not self.enabled:
+            return False
+        return category not in self.disabled_categories
 
 
 class ActivityLogger:
@@ -86,28 +107,38 @@ class ActivityLogger:
         self._internal_log = get_logger("ActivityLogger")
 
     def _cache_key(self, guild_id: int) -> str:
-        return f"activity-log-channel:{guild_id}"
+        return f"activity-log-config:{guild_id}"
 
     async def invalidate_cache(self, guild_id: int) -> None:
         await self._cache.invalidate(self._cache_key(guild_id))
 
-    async def get_log_channel(self, guild: discord.Guild) -> Optional[discord.TextChannel]:
-        if self.bot.guild_repo is None:
-            return None
-
+    async def _get_config(self, guild: discord.Guild) -> _ActivityLogConfig:
         cache_key = self._cache_key(guild.id)
         cached = await self._cache.get(cache_key)
-        channel_id: Optional[int]
+        if isinstance(cached, _ActivityLogConfig):
+            return cached
 
-        if cached is None:
-            settings = await self.bot.guild_repo.get(guild.id)
-            channel_id = settings.log_channel_id if settings else None
-            await self._cache.set(cache_key, _ChannelCacheEntry(channel_id))
-        elif isinstance(cached, _ChannelCacheEntry):
-            channel_id = cached.channel_id
+        if self.bot.guild_repo is None:
+            config = _ActivityLogConfig(channel_id=None, enabled=False, disabled_categories=frozenset())
         else:
-            channel_id = cached  # type: ignore[assignment]
+            settings = await self.bot.guild_repo.get(guild.id)
+            if settings is None:
+                config = _ActivityLogConfig(channel_id=None, enabled=False, disabled_categories=frozenset())
+            else:
+                config = _ActivityLogConfig(
+                    channel_id=settings.effective_activity_channel(),
+                    enabled=bool(settings.activity_log_enabled),
+                    disabled_categories=frozenset(settings.activity_log_disabled_events),
+                )
 
+        await self._cache.set(cache_key, config)
+        return config
+
+    async def get_preferences(self, guild: discord.Guild) -> _ActivityLogConfig:
+        return await self._get_config(guild)
+
+    async def _resolve_channel(self, guild: discord.Guild, config: _ActivityLogConfig) -> Optional[discord.TextChannel]:
+        channel_id = config.channel_id
         if not channel_id:
             return None
 
@@ -124,10 +155,18 @@ class ActivityLogger:
         except discord.HTTPException:
             await self.invalidate_cache(guild.id)
             return None
+
         if isinstance(fetched, discord.TextChannel):
             return fetched
+
         await self.invalidate_cache(guild.id)
         return None
+
+    async def get_log_channel(self, guild: discord.Guild) -> Optional[discord.TextChannel]:
+        config = await self._get_config(guild)
+        if not config.enabled:
+            return None
+        return await self._resolve_channel(guild, config)
 
     async def send_embed(
         self,
@@ -136,8 +175,15 @@ class ActivityLogger:
         *,
         channel: Optional[discord.TextChannel] = None,
         files: Optional[Sequence[discord.File]] = None,
+        category: Optional[str] = None,
     ) -> bool:
-        target = channel or await self.get_log_channel(guild)
+        config = await self._get_config(guild)
+        if category is not None and not config.allows(category):
+            return False
+        if category is None and not config.enabled:
+            return False
+
+        target = channel or await self._resolve_channel(guild, config)
         if target is None:
             return False
         try:
@@ -167,7 +213,7 @@ class ActivityLogger:
         if attachments:
             embed.add_field(name="Lampiran", value=attachments, inline=False)
         embed.add_field(name="Link", value=message.jump_url, inline=False)
-        return await self.send_embed(message.guild, embed, channel=channel)
+        return await self.send_embed(message.guild, embed, channel=channel, category="messages")
 
     async def log_message_edit(
         self,
@@ -188,7 +234,7 @@ class ActivityLogger:
         if after.content:
             embed.add_field(name="Sesudah", value=truncate_content(after.content), inline=False)
         embed.add_field(name="Link", value=after.jump_url, inline=False)
-        return await self.send_embed(after.guild, embed, channel=channel)
+        return await self.send_embed(after.guild, embed, channel=channel, category="messages")
 
     async def log_message_delete(
         self,
@@ -210,7 +256,7 @@ class ActivityLogger:
         attachment_display = format_attachments(attachments or [])
         if attachment_display:
             embed.add_field(name="Lampiran", value=attachment_display, inline=False)
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="messages")
 
     async def log_bulk_delete(
         self,
@@ -223,7 +269,7 @@ class ActivityLogger:
         count = sum(1 for _ in messages)
         embed = self._base_embed("Bulk Delete", color=discord.Color.dark_red(), description=f"{count} pesan dihapus.")
         embed.add_field(name="Channel", value=channel_deleted.mention)
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="messages")
 
     async def log_member_join(self, member: discord.Member, *, channel: Optional[discord.TextChannel] = None) -> bool:
         guild = member.guild
@@ -232,7 +278,7 @@ class ActivityLogger:
         embed.add_field(name="Akun dibuat", value=discord.utils.format_dt(member.created_at, style="F"))
         if member.bot:
             embed.add_field(name="Tipe", value="Bot")
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="members")
 
     async def log_member_remove(self, member: discord.Member | discord.User, guild: discord.Guild, *, channel: Optional[discord.TextChannel] = None) -> bool:
         embed = self._base_embed("Anggota Keluar", color=discord.Color.orange())
@@ -240,7 +286,7 @@ class ActivityLogger:
         joined_at = getattr(member, "joined_at", None)
         if joined_at:
             embed.add_field(name="Bergabung", value=discord.utils.format_dt(joined_at, style="F"))
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="members")
 
     async def log_member_update(
         self,
@@ -275,7 +321,7 @@ class ActivityLogger:
         embed = self._base_embed("Anggota Diperbarui", color=discord.Color.blue())
         embed.add_field(name="Pengguna", value=format_user(after), inline=False)
         embed.add_field(name="Perubahan", value="\n".join(changes), inline=False)
-        return await self.send_embed(after.guild, embed, channel=channel)
+        return await self.send_embed(after.guild, embed, channel=channel, category="members")
 
     async def log_voice_state(
         self,
@@ -311,7 +357,7 @@ class ActivityLogger:
         embed = self._base_embed("Aktivitas Voice", color=discord.Color.purple())
         embed.add_field(name="Pengguna", value=format_user(member), inline=False)
         embed.add_field(name="Perubahan", value="\n".join(changes), inline=False)
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="voice")
 
     async def log_channel_event(
         self,
@@ -329,7 +375,7 @@ class ActivityLogger:
         if old_name or new_name:
             embed.add_field(name="Nama", value=f"{old_name or '-'} → {new_name or '-'}", inline=False)
         embed.add_field(name="ID", value=f"`{channel_obj.id}`")
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="server")
 
     async def log_role_event(
         self,
@@ -347,7 +393,7 @@ class ActivityLogger:
         if old_name or new_name:
             embed.add_field(name="Nama", value=f"{old_name or '-'} → {new_name or '-'}", inline=False)
         embed.add_field(name="ID", value=f"`{role.id}`")
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="server")
 
     async def log_thread_event(
         self,
@@ -364,7 +410,7 @@ class ActivityLogger:
         if parent:
             embed.add_field(name="Parent", value=parent.mention)
         embed.add_field(name="ID", value=f"`{thread.id}`")
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="server")
 
     async def log_reaction(
         self,
@@ -384,7 +430,7 @@ class ActivityLogger:
         embed.add_field(name="Channel", value=message.channel.mention)
         embed.add_field(name="Emote", value=str(reaction.emoji))
         embed.add_field(name="Link", value=message.jump_url, inline=False)
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="reactions")
 
     async def log_app_command(
         self,
@@ -412,7 +458,7 @@ class ActivityLogger:
         embed.add_field(name="Perintah", value=command_name)
         if not succeeded and error:
             embed.add_field(name="Error", value=truncate_content(str(error), limit=512), inline=False)
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="commands")
 
     async def log_prefix_command(
         self,
@@ -437,4 +483,4 @@ class ActivityLogger:
             embed.add_field(name="Isi", value=truncate_content(ctx.message.content), inline=False)
         if not succeeded and error:
             embed.add_field(name="Error", value=truncate_content(str(error), limit=512), inline=False)
-        return await self.send_embed(guild, embed, channel=channel)
+        return await self.send_embed(guild, embed, channel=channel, category="commands")
