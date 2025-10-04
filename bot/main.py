@@ -98,6 +98,7 @@ class ForUS(commands.Bot):
             "bot.cogs.levels",
             "bot.cogs.announcements",
             "bot.cogs.audit",
+            "bot.cogs.activity_log",
         ):
             try:
                 await self.load_extension(extension)
@@ -116,8 +117,8 @@ class ForUS(commands.Bot):
         try:
             self.tree.clear_commands(guild=guild)
             global_commands = self.tree.get_commands(guild=None)
-            if global_commands:
-                self.tree.copy_global_to(guild=guild)
+            #if global_commands:
+                # self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
             self.log.info("Sinkronisasi perintah untuk guild %s", guild_id)
         except Exception:  # noqa: BLE001

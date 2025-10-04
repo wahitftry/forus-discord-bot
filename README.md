@@ -5,7 +5,8 @@ Bot Discord multifungsi berbahasa Indonesia dengan perintah slash (/) berbasis `
 ## Fitur Utama
 - ⚙️ **Konfigurasi Slash** `/setup` untuk welcome, goodbye, log, autorole, kategori tiket, dan zona waktu.
 - 🛡️ **Moderasi** `/moderasi` (kick/ban/clear/warn) dengan logging otomatis.
-- 📊 **Ekonomi & Toko** `/daily`, `/work`, `/transfer`, `/leaderboard`, `/shop list|buy`, serta panel admin `/shopadmin add`.
+- � **Activity Feed** kanal log real-time untuk pesan, edit/hapus, join/leave, voice, perintah, reaksi, dan perubahan struktur server.
+- �📊 **Ekonomi & Toko** `/daily`, `/work`, `/transfer`, `/leaderboard`, `/shop list|buy`, serta panel admin `/shopadmin add`.
 - ⏰ **Pengingat** `/reminder create|list|delete` dengan scheduler asinkron.
 - 🎟️ **Sistem Tiket** `/ticket create|close|add|remove` membuat kanal privat.
 - 🎉 **Hiburan** `/meme`, `/quote`, `/joke`, `/dice`, `/8ball`, `/ship`.
@@ -83,6 +84,18 @@ Gunakan grup perintah `/audit` untuk menelusuri histori otomatis bot seperti pen
 - `/audit stats` — ringkasan jumlah aksi per kategori dalam rentang hari tertentu beserta daftar aktor teratas.
 
 Seluruh data audit disimpan terpisah dari Audit Log Discord sehingga administrator dapat membaca aktivitas bot tanpa meninggalkan Discord.
+
+## Activity Logger
+
+Aktifkan kanal log aktivitas dengan perintah `/setup log` agar bot dapat mengirim embed ringkas tentang setiap aktivitas penting:
+
+- Pesan baru, suntingan, dan penghapusan (termasuk lampiran).
+- Anggota bergabung/keluar, perubahan nickname/role, dan perpindahan voice channel.
+- Pembuatan/penghapusan channel, role, serta thread.
+- Reaksi yang ditambahkan/dihapus.
+- Eksekusi perintah slash maupun prefix beserta error-nya.
+
+Bot otomatis menghindari loop (pesan di kanal log tidak dilaporkan ulang) dan memanfaatkan cache supaya tidak membanjiri database saat mengambil konfigurasi kanal. Jika kanal log dihapus atau bot kehilangan izin, cache dibersihkan otomatis dan Anda akan melihat peringatan pada log server.
 
 ## Utilitas Waktu
 
