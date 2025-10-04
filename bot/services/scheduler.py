@@ -39,3 +39,9 @@ class Scheduler:
         job = self._scheduler.get_job(job_id)
         if job:
             job.remove()
+
+    def job_count(self) -> int:
+        return len(self._scheduler.get_jobs())
+
+    def list_jobs(self) -> list[str]:
+        return [job.id or "" for job in self._scheduler.get_jobs()]

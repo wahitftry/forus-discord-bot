@@ -1035,18 +1035,91 @@ class AuditLogRepository:
             context,
         )
 
-    async def recent_entries(self, guild_id: int, limit: int = 10) -> list[dict[str, Any]]:
-        rows = await self._db.fetchall(
-            """
-            SELECT * FROM audit_logs
-            WHERE guild_id = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            guild_id,
-            limit,
-        )
+    async def recent_entries(self, guild_id: int, limit: int = 10, action_prefix: Optional[str] = None) -> list[dict[str, Any]]:
+        if action_prefix:
+            rows = await self._db.fetchall(
+                """
+                SELECT * FROM audit_logs
+                WHERE guild_id = ? AND action LIKE ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                guild_id,
+                f"{action_prefix}%",
+                limit,
+            )
+        else:
+            rows = await self._db.fetchall(
+                """
+                SELECT * FROM audit_logs
+                WHERE guild_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                guild_id,
+                limit,
+            )
         return [dict(row) for row in rows]
+
+    async def action_summary(self, guild_id: int, limit: int = 10, since: Optional[str] = None) -> list[tuple[str, int]]:
+        if since:
+            rows = await self._db.fetchall(
+                """
+                SELECT action, COUNT(*) AS total
+                FROM audit_logs
+                WHERE guild_id = ? AND datetime(created_at) >= datetime(?)
+                GROUP BY action
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                guild_id,
+                since,
+                limit,
+            )
+        else:
+            rows = await self._db.fetchall(
+                """
+                SELECT action, COUNT(*) AS total
+                FROM audit_logs
+                WHERE guild_id = ?
+                GROUP BY action
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                guild_id,
+                limit,
+            )
+        return [(str(row["action"]), int(row["total"])) for row in rows]
+
+    async def actor_summary(self, guild_id: int, limit: int = 5, since: Optional[str] = None) -> list[tuple[int, int]]:
+        if since:
+            rows = await self._db.fetchall(
+                """
+                SELECT actor_id, COUNT(*) AS total
+                FROM audit_logs
+                WHERE guild_id = ? AND actor_id IS NOT NULL AND datetime(created_at) >= datetime(?)
+                GROUP BY actor_id
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                guild_id,
+                since,
+                limit,
+            )
+        else:
+            rows = await self._db.fetchall(
+                """
+                SELECT actor_id, COUNT(*) AS total
+                FROM audit_logs
+                WHERE guild_id = ? AND actor_id IS NOT NULL
+                GROUP BY actor_id
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                guild_id,
+                limit,
+            )
+        return [(int(row["actor_id"]), int(row["total"])) for row in rows]
 
 
 @dataclass(slots=True)

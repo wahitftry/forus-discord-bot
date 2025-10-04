@@ -10,6 +10,9 @@ Bot Discord multifungsi berbahasa Indonesia dengan perintah slash (/) berbasis `
 - 🎟️ **Sistem Tiket** `/ticket create|close|add|remove` membuat kanal privat.
 - 🎉 **Hiburan** `/meme`, `/quote`, `/joke`, `/dice`, `/8ball`, `/ship`.
 - 🤖 **Utilitas** `/ping`, `/help`, `/userinfo`, `/serverinfo`, `/botstats`, `/jadwalsholat`, `/carijadwalsholat`.
+- 🕒 **Utilitas Waktu & Zona** `/timestamp` dan `/timezone` untuk membuat kode timestamp Discord dan konversi lintas zona (mendukung alias WIB/WITA/WIT).
+- 🧭 **Diagnostik Server** `/roleinfo`, `/channelinfo`, `/serverinfo` (versi terbaru) menyajikan statistik channel, boost, hingga izin penting.
+- 🗂️ **Audit Internal** `/audit recent` & `/audit stats` mencatat aktivitas otomatis bot dan ringkasan statistiknya.
 - �‍💻 **Developer Insight** `/developer ringkasan` dan `/developer profil` menghadirkan detail tim pengembang, jam support, dan kanal dukungan resmi.
 - �👋 **Event Otomatis** sambutan, perpisahan, autorole, dan filter kata kasar + anti-spam sederhana.
 - 💑 **Fitur Couple** `/couple propose|respond|status|affection|leaderboard|breakup` lengkap dengan pengaturan anniversary.
@@ -71,6 +74,26 @@ Gunakan grup perintah `/developer` untuk mengenal tim pengembang dan kanal dukun
 - `/developer profil` — memberikan profil lengkap: peran, tanggung jawab, highlight fitur, pencapaian, jam respons, serta tautan kontak.
 
 Setiap informasi bersumber dari berkas statis `bot/data/developers.json` sehingga dapat diperbarui tanpa menyentuh kode. Data ini juga tampil pada perintah `/help` agar mudah ditemukan member server.
+
+## Audit Internal
+
+Gunakan grup perintah `/audit` untuk menelusuri histori otomatis bot seperti penjadwalan pengumuman atau permintaan moderasi:
+
+- `/audit recent` — daftar entri audit terbaru lengkap dengan pelaku, target, konteks, dan stempel waktu relatif.
+- `/audit stats` — ringkasan jumlah aksi per kategori dalam rentang hari tertentu beserta daftar aktor teratas.
+
+Seluruh data audit disimpan terpisah dari Audit Log Discord sehingga administrator dapat membaca aktivitas bot tanpa meninggalkan Discord.
+
+## Utilitas Waktu
+
+- `/timestamp` — konversi satu waktu ke tujuh format timestamp Discord siap salin (`<t:..:R>`, `<t:..:F>`, dll) dengan dukungan zona waktu server.
+- `/timezone` — konversi lintas zona (bisa lebih dari satu tujuan sekaligus) dengan dukungan alias lokal `WIB/WITA/WIT` serta format offset `UTC±HH:MM`.
+
+## Diagnostik Channel & Role
+
+- `/roleinfo` — tampilkan izin penting, jumlah anggota manusia vs bot, serta metadata lain (warna, posisi, status integrasi).
+- `/channelinfo` — detail channel teks, suara, stage, forum, maupun thread: slowmode, auto-archive, bitrate, parent category, dan lainnya.
+- `/serverinfo` — versi terbaru menghadirkan statistik anggota, channel, boost, koleksi emoji/stiker, fitur aktif, dan kebijakan keamanan.
 
 ## Jadwal Sholat
 
