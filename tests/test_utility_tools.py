@@ -27,6 +27,12 @@ def test_resolve_timezone_offset() -> None:
     assert offset == timedelta(hours=7)
 
 
+def test_resolve_timezone_fallback_alias() -> None:
+    tz = resolve_timezone(None, fallback="Jakarta")
+    assert isinstance(tz, ZoneInfo)
+    assert tz.key == "Asia/Jakarta"
+
+
 def test_parse_datetime_input_time_only() -> None:
     tz = ZoneInfo("Asia/Jakarta")
     reference = datetime(2025, 1, 1, 12, 0, tzinfo=tz)

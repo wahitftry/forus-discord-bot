@@ -6,3 +6,4 @@ python-dotenv==1.1.1
 pytest==8.4.2
 pytest-asyncio==1.2.0
 pynacl==1.6.0
+tzdata==2025.2
