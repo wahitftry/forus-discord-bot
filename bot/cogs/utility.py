@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 import platform
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone as dt_timezone
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
@@ -14,6 +14,14 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.services.cache import TTLCache
+from bot.services.utility_tools import (
+    discord_timestamp_variants,
+    format_timezone_display,
+    gather_guild_statistics,
+    parse_datetime_input,
+    process_resource_snapshot,
+    resolve_timezone,
+)
 
 if TYPE_CHECKING:
     from bot.main import ForUS
@@ -40,6 +48,38 @@ class Utility(commands.Cog):
     async def cog_unload(self) -> None:
         await self.session.close()
 
+    async def _get_default_timezone(self, guild: discord.Guild | None) -> str:
+        if guild and self.bot.guild_repo is not None:
+            settings = await self.bot.guild_repo.get(guild.id)
+            if settings and settings.timezone:
+                return settings.timezone
+        return "Asia/Jakarta"
+
+    @staticmethod
+    def _highlight_permissions(role: discord.Role) -> str:
+        important = [
+            ("administrator", "Administrator"),
+            ("manage_guild", "Kelola Server"),
+            ("manage_roles", "Kelola Role"),
+            ("manage_channels", "Kelola Channel"),
+            ("ban_members", "Ban Member"),
+            ("kick_members", "Kick Member"),
+            ("moderate_members", "Timeout"),
+            ("manage_messages", "Kelola Pesan"),
+            ("mention_everyone", "Mention Everyone"),
+            ("manage_webhooks", "Kelola Webhook"),
+        ]
+        granted = [label for attr, label in important if getattr(role.permissions, attr, False)]
+        return ", ".join(granted) if granted else "Tidak ada"
+
+    @staticmethod
+    def _limit_text(value: str | None, limit: int = 200) -> str | None:
+        if value is None:
+            return None
+        if len(value) <= limit:
+            return value
+        return value[: limit - 3] + "..."
+
     @app_commands.command(name="ping", description="Cek latensi bot.")
     async def ping(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(
@@ -58,10 +98,132 @@ class Utility(commands.Cog):
         embed.add_field(name="/userinfo", value="Informasi dasar pengguna.", inline=False)
         embed.add_field(name="/serverinfo", value="Ringkasan server.", inline=False)
         embed.add_field(name="/botstats", value="Statistik bot & uptime.", inline=False)
+        embed.add_field(name="/timestamp", value="Konversi waktu menjadi berbagai format timestamp Discord.", inline=False)
+        embed.add_field(name="/timezone", value="Konversi waktu antar zona secara cepat (mendukung beberapa target).", inline=False)
+        embed.add_field(name="/roleinfo", value="Tampilkan detail role, izin penting, dan jumlah anggotanya.", inline=False)
+        embed.add_field(name="/channelinfo", value="Diagnostik channel teks/suara/thread termasuk slowmode, NSFW, dan lainnya.", inline=False)
         embed.add_field(name="/developer ringkasan", value="Profil singkat tim pengembang.", inline=False)
         embed.add_field(name="/developer profil", value="Detail lengkap developer tertentu.", inline=False)
         embed.add_field(name="/jadwalsholat", value="Tampilkan jadwal sholat harian untuk Indonesia atau Malaysia.", inline=False)
         embed.add_field(name="/carijadwalsholat", value="Cari ID kota (Indonesia) atau kode JAKIM zona (Malaysia).", inline=False)
+        embed.add_field(name="/audit recent", value="Ringkasan aktivitas penting dari log audit internal.", inline=False)
+        embed.add_field(name="/audit stats", value="Statistik frekuensi aksi audit dalam rentang waktu tertentu.", inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="timestamp", description="Konversi waktu menjadi berbagai format timestamp Discord siap pakai.")
+    @app_commands.describe(
+        waktu="Waktu target (contoh: 2025-01-31 19:30)",
+        zona_waktu="Zona waktu asal. Kosongkan untuk mengikuti pengaturan server atau Asia/Jakarta.",
+    )
+    async def timestamp(self, interaction: discord.Interaction, waktu: str, zona_waktu: str | None = None) -> None:
+        default_tz_name = await self._get_default_timezone(interaction.guild)
+        try:
+            source_tz = resolve_timezone(zona_waktu, fallback=default_tz_name)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+            return
+
+        try:
+            local_dt = parse_datetime_input(waktu, source_tz)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+            return
+
+        utc_dt = local_dt.astimezone(dt_timezone.utc)
+        variants = discord_timestamp_variants(local_dt)
+        embed = discord.Embed(
+            title="Format Timestamp Discord",
+            description=(
+                f"Waktu sumber: {discord.utils.format_dt(local_dt, style='F')}\n"
+                f"Zona waktu: {format_timezone_display(source_tz)}"
+            ),
+            color=discord.Color.teal(),
+        )
+        embed.add_field(name="Unix", value=f"`{int(utc_dt.timestamp())}`", inline=False)
+        for label, formatted in variants:
+            embed.add_field(name=label, value=formatted, inline=True)
+        embed.add_field(
+            name="UTC",
+            value=f"{discord.utils.format_dt(utc_dt, style='F')} (Relative {discord.utils.format_dt(utc_dt, style='R')})",
+            inline=False,
+        )
+        embed.set_footer(text="Salin format yang sesuai dan tempelkan langsung ke chat Discord.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="timezone", description="Konversi waktu antar beberapa zona sekaligus.")
+    @app_commands.describe(
+        waktu="Waktu sumber (contoh: 2025-01-31 19:30)",
+        zona_asal="Zona waktu asal. Kosongkan untuk mengikuti pengaturan server atau Asia/Jakarta.",
+        zona_tujuan="Daftar zona tujuan dipisahkan koma (misal: UTC,Asia/Tokyo,America/New_York)",
+    )
+    async def timezone(
+        self,
+        interaction: discord.Interaction,
+        waktu: str,
+        zona_asal: str | None = None,
+        zona_tujuan: str | None = None,
+    ) -> None:
+        default_tz_name = await self._get_default_timezone(interaction.guild)
+        try:
+            origin_tz = resolve_timezone(zona_asal, fallback=default_tz_name)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+            return
+
+        try:
+            origin_dt = parse_datetime_input(waktu, origin_tz)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+            return
+
+        raw_targets = zona_tujuan or "UTC"
+        target_names = [name.strip() for name in raw_targets.split(",") if name.strip()]
+        if "UTC" not in {name.upper() for name in target_names}:
+            target_names.append("UTC")
+
+        results: list[tuple[str, datetime]] = []
+        errors: list[str] = []
+        seen: set[str] = set()
+        for candidate in target_names:
+            try:
+                target_tz = resolve_timezone(candidate, fallback=None)
+            except ValueError:
+                errors.append(candidate)
+                continue
+            label = format_timezone_display(target_tz)
+            if label in seen:
+                continue
+            seen.add(label)
+            converted = origin_dt.astimezone(target_tz)
+            results.append((label, converted))
+
+        if not results:
+            message = "Tidak ada zona tujuan valid yang diberikan."
+            if errors:
+                message += f" Zona tidak valid: {', '.join(errors)}."
+            await interaction.response.send_message(message, ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="Konversi Zona Waktu",
+            description=(
+                f"Sumber: {discord.utils.format_dt(origin_dt, style='F')}\n"
+                f"Zona asal: {format_timezone_display(origin_tz)}"
+            ),
+            color=discord.Color.dark_teal(),
+        )
+        for label, dt_value in results:
+            embed.add_field(
+                name=label,
+                value=(
+                    f"{discord.utils.format_dt(dt_value, style='F')}\n"
+                    f"Relative: {discord.utils.format_dt(dt_value, style='R')}"
+                ),
+                inline=False,
+            )
+        if errors:
+            truncated = self._limit_text(", ".join(errors), 200)
+            embed.set_footer(text=f"Zona diabaikan: {truncated}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="carijadwalsholat", description="Cari ID kota (Indonesia) atau kode JAKIM (Malaysia) untuk jadwal sholat.")
@@ -129,31 +291,294 @@ class Utility(commands.Cog):
             embed.add_field(name="Role", value=roles, inline=False)
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="roleinfo", description="Tampilkan detail lengkap sebuah role di server.")
+    async def roleinfo(self, interaction: discord.Interaction, role: discord.Role) -> None:
+        if interaction.guild is None:
+            await interaction.response.send_message("Perintah ini hanya dapat digunakan di dalam server.", ephemeral=True)
+            return
+
+        color = role.color if role.color.value else discord.Color.light_gray()
+        embed = discord.Embed(
+            title=f"Role: {role.name}",
+            description=role.mention if not role.is_default() else "Role default (@everyone)",
+            color=color,
+        )
+        embed.add_field(name="ID", value=str(role.id))
+        embed.add_field(name="Posisi", value=str(role.position))
+        embed.add_field(name="Dibuat", value=discord.utils.format_dt(role.created_at, style="F"), inline=False)
+        color_hex = f"#{role.color.value:06X}" if role.color.value else "#000000"
+        embed.add_field(name="Warna", value=color_hex, inline=True)
+        embed.add_field(name="Dapat disebut", value="Ya" if role.mentionable else "Tidak", inline=True)
+        embed.add_field(name="Terpisah", value="Ya" if role.hoist else "Tidak", inline=True)
+        embed.add_field(name="Dikelola bot/integrasi", value="Ya" if role.managed else "Tidak", inline=True)
+
+        members = list(role.members)
+        total_members = len(members)
+        bot_members = sum(1 for member in members if getattr(member, "bot", False))
+        human_members = total_members - bot_members
+        embed.add_field(
+            name="Jumlah anggota",
+            value=f"Total: {total_members}\nManusia: {human_members}\nBot: {bot_members}",
+            inline=False,
+        )
+
+        highlight = self._highlight_permissions(role)
+        embed.add_field(name="Izin penting", value=highlight, inline=False)
+
+        enabled_permissions = [
+            perm.replace("_", " ").title()
+            for perm, allowed in role.permissions
+            if allowed
+        ]
+        embed.add_field(name="Jumlah izin aktif", value=str(len(enabled_permissions)), inline=True)
+        if enabled_permissions:
+            preview = self._limit_text(", ".join(enabled_permissions[:15]), 512)
+            embed.add_field(name="Contoh izin aktif", value=preview or "-", inline=False)
+
+        embed.set_footer(text=f"ID: {role.id}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @app_commands.command(name="serverinfo", description="Menampilkan info server.")
     async def serverinfo(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
         if guild is None:
             await interaction.response.send_message("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
             return
+        stats = gather_guild_statistics(guild)
         embed = discord.Embed(title=guild.name, color=discord.Color.gold())
-        embed.set_thumbnail(url=guild.icon.url if guild.icon else discord.Embed.Empty)
-        embed.add_field(name="ID", value=str(guild.id))
-        embed.add_field(name="Owner", value=guild.owner.mention if guild.owner else "Tidak diketahui")
-        embed.add_field(name="Anggota", value=str(guild.member_count))
+        if guild.description:
+            embed.description = self._limit_text(guild.description, 350)
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        if guild.banner:
+            embed.set_image(url=guild.banner.url)
+        elif guild.splash:
+            embed.set_image(url=guild.splash.url)
+
+        embed.add_field(name="ID", value=str(guild.id), inline=True)
+        embed.add_field(name="Owner", value=guild.owner.mention if guild.owner else "Tidak diketahui", inline=True)
         embed.add_field(name="Dibuat", value=discord.utils.format_dt(guild.created_at, style="F"), inline=False)
+
+        embed.add_field(
+            name="Anggota",
+            value=(
+                f"Total: {stats.total_members}\n"
+                f"Manusia: {stats.human_members}\n"
+                f"Bot: {stats.bot_members}"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="Channel",
+            value=(
+                f"Teks: {stats.text_channels}\n"
+                f"Suara: {stats.voice_channels}\n"
+                f"Stage: {stats.stage_channels}\n"
+                f"Forum: {stats.forum_channels}\n"
+                f"Kategori: {stats.categories}\n"
+                f"Thread aktif: {stats.thread_channels}"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="Boost",
+            value=(
+                f"Tingkat: {stats.boost_level}\n"
+                f"Jumlah: {stats.boosts}"
+            ),
+            inline=True,
+        )
+
+        embed.add_field(
+            name="Koleksi",
+            value=(
+                f"Role: {stats.roles}\n"
+                f"Emoji: {stats.emoji_count}\n"
+                f"Stiker: {stats.sticker_count}"
+            ),
+            inline=True,
+        )
+        embed.add_field(name="Acara Terjadwal", value=str(stats.scheduled_events), inline=True)
+        embed.add_field(name="Locale", value=guild.preferred_locale or "-", inline=True)
+
+        def _format_enum(value: Any) -> str:
+            raw = getattr(value, "name", value)
+            if isinstance(raw, str):
+                return raw.replace("_", " ").title()
+            return str(raw)
+
+        embed.add_field(
+            name="Keamanan",
+            value=(
+                f"Verifikasi: {_format_enum(guild.verification_level)}\n"
+                f"Filter Konten: {_format_enum(guild.explicit_content_filter)}\n"
+                f"NSFW: {_format_enum(getattr(guild, 'nsfw_level', 'unknown'))}"
+            ),
+            inline=False,
+        )
+
+        features = getattr(guild, "features", [])
+        if features:
+            formatted_features = ", ".join(sorted(feature.replace("_", " ").title() for feature in features))
+            embed.add_field(name="Fitur Server", value=self._limit_text(formatted_features, 1024), inline=False)
+
+        embed.set_footer(text=f"ID: {guild.id}")
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="channelinfo", description="Diagnostik lengkap sebuah channel. Kosongkan untuk channel saat ini.")
+    @app_commands.describe(channel="Channel yang ingin dianalisis. Kosongkan untuk menggunakan channel saat ini.")
+    async def channelinfo(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.abc.GuildChannel | None = None,
+    ) -> None:
+        if interaction.guild is None:
+            await interaction.response.send_message("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
+            return
+
+        target = channel or interaction.channel
+        if not isinstance(target, discord.abc.GuildChannel):
+            await interaction.response.send_message("Tidak dapat membaca informasi channel ini.", ephemeral=True)
+            return
+
+        if isinstance(target, discord.VoiceChannel):
+            color = discord.Color.orange()
+        elif isinstance(target, discord.StageChannel):
+            color = discord.Color.dark_magenta()
+        elif isinstance(target, discord.CategoryChannel):
+            color = discord.Color.dark_gray()
+        elif isinstance(target, discord.Thread):
+            color = discord.Color.gold()
+        else:
+            color = discord.Color.blurple()
+
+        title = getattr(target, "name", str(target.id))
+        embed = discord.Embed(title=f"Channel #{title}", color=color)
+        mention = getattr(target, "mention", None)
+        if mention:
+            embed.description = mention
+
+        embed.add_field(name="ID", value=str(target.id), inline=True)
+        channel_type = getattr(target, "type", None)
+        type_label = channel_type.name.replace("_", " ").title() if channel_type else target.__class__.__name__
+        embed.add_field(name="Jenis", value=type_label, inline=True)
+
+        category = getattr(target, "category", None)
+        if category:
+            embed.add_field(name="Kategori", value=getattr(category, "mention", category.name), inline=True)
+
+        parent = getattr(target, "parent", None)
+        if parent:
+            embed.add_field(name="Parent", value=getattr(parent, "mention", getattr(parent, "name", "-")), inline=True)
+
+        created_at = getattr(target, "created_at", None)
+        if isinstance(created_at, datetime):
+            embed.add_field(name="Dibuat", value=discord.utils.format_dt(created_at, style="F"), inline=False)
+
+        position = getattr(target, "position", None)
+        if isinstance(position, int):
+            embed.add_field(name="Posisi", value=str(position), inline=True)
+
+        nsfw_flag = getattr(target, "nsfw", None)
+        if nsfw_flag is not None:
+            embed.add_field(name="NSFW", value="Ya" if nsfw_flag else "Tidak", inline=True)
+
+        if isinstance(target, discord.TextChannel):
+            slowmode = target.slowmode_delay or 0
+            embed.add_field(name="Slowmode", value=f"{slowmode} detik" if slowmode else "Tidak aktif", inline=True)
+            topic = self._limit_text(target.topic, 512) or "Tidak ada"
+            embed.add_field(name="Topik", value=topic, inline=False)
+        elif isinstance(target, discord.ForumChannel):
+            slowmode = target.default_thread_slowmode_delay or 0
+            embed.add_field(name="Slowmode thread", value=f"{slowmode} detik" if slowmode else "Tidak aktif", inline=True)
+            auto_archive = target.default_auto_archive_duration or 0
+            embed.add_field(name="Auto archive", value=f"{auto_archive} menit", inline=True)
+            tags = target.available_tags
+            if tags:
+                tag_preview = ", ".join(tag.name for tag in tags[:10])
+                embed.add_field(name="Tag tersedia", value=self._limit_text(tag_preview, 512), inline=False)
+        elif isinstance(target, discord.VoiceChannel):
+            embed.add_field(name="Bitrate", value=f"{target.bitrate // 1000} kbps", inline=True)
+            embed.add_field(name="Batas pengguna", value=str(target.user_limit) if target.user_limit else "Tidak ada", inline=True)
+            embed.add_field(name="Region RTC", value=target.rtc_region or "Otomatis", inline=True)
+        elif isinstance(target, discord.StageChannel):
+            embed.add_field(name="Bitrate", value=f"{target.bitrate // 1000} kbps", inline=True)
+            embed.add_field(name="Batas pembicara", value=str(target.user_limit) if target.user_limit else "Tidak ada", inline=True)
+            if target.topic:
+                embed.add_field(name="Topik", value=self._limit_text(target.topic, 512), inline=False)
+        elif isinstance(target, discord.CategoryChannel):
+            child_count = len(target.channels)
+            embed.add_field(name="Jumlah channel", value=str(child_count), inline=True)
+        elif isinstance(target, discord.Thread):
+            owner = getattr(target, "owner", None)
+            if owner:
+                owner_value = owner.mention
+            elif getattr(target, "owner_id", None):
+                owner_value = f"<@{target.owner_id}>"
+            else:
+                owner_value = "Tidak diketahui"
+            embed.add_field(name="Owner", value=owner_value, inline=True)
+            embed.add_field(name="Auto archive", value=f"{target.auto_archive_duration} menit", inline=True)
+            embed.add_field(name="Terkunci", value="Ya" if target.locked else "Tidak", inline=True)
+            embed.add_field(name="Terarsip", value="Ya" if target.archived else "Tidak", inline=True)
+            embed.add_field(name="Jumlah pesan", value=str(target.message_count or 0), inline=True)
+            embed.add_field(name="Jumlah anggota", value=str(target.member_count or 0), inline=True)
+            slowmode = getattr(target, "slowmode_delay", 0) or 0
+            if slowmode:
+                embed.add_field(name="Slowmode", value=f"{slowmode} detik", inline=True)
+
+        embed.set_footer(text=f"ID: {target.id}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="botstats", description="Statistik bot singkat.")
     async def botstats(self, interaction: discord.Interaction) -> None:
-        uptime = time.time() - self.launch_time
-        uptime_hours = uptime / 3600
+        uptime_seconds = int(time.time() - self.launch_time)
+        days, remainder = divmod(uptime_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, _ = divmod(remainder, 60)
+        uptime_text = f"{days} hari {hours} jam {minutes} menit"
+        started_at = datetime.fromtimestamp(self.launch_time, tz=dt_timezone.utc)
+
+        scheduler_jobs = 0
+        job_list: list[str] = []
+        if self.bot.scheduler:
+            scheduler_jobs = self.bot.scheduler.job_count()
+            job_list = self.bot.scheduler.list_jobs()
+
+        resource_stats = process_resource_snapshot()
+        command_count = len(self.bot.tree.get_commands())
+        shard_count = getattr(self.bot, "shard_count", None) or 1
+        cog_count = len(self.bot.cogs)
+
         embed = discord.Embed(title="Statistik Bot", color=discord.Color.purple())
-        embed.add_field(name="Versi Python", value=platform.python_version())
-        embed.add_field(name="Versi Discord.py", value=discord.__version__)
-        embed.add_field(name="Total Guild", value=str(len(self.bot.guilds)))
-        embed.add_field(name="Total Pengguna", value=str(len(self.bot.users)))
-        embed.add_field(name="Uptime", value=f"{uptime_hours:.2f} jam")
-        await interaction.response.send_message(embed=embed)
+        embed.add_field(name="Versi Python", value=platform.python_version(), inline=True)
+        embed.add_field(name="discord.py", value=discord.__version__, inline=True)
+        embed.add_field(name="Shard", value=str(shard_count), inline=True)
+        embed.add_field(name="Guild", value=str(len(self.bot.guilds)), inline=True)
+        embed.add_field(name="Pengguna unik", value=str(len(self.bot.users)), inline=True)
+        embed.add_field(name="Total cog", value=str(cog_count), inline=True)
+        embed.add_field(name="Perintah terdaftar", value=str(command_count), inline=True)
+        embed.add_field(name="Tugas terjadwal", value=str(scheduler_jobs), inline=True)
+        embed.add_field(name="Uptime", value=f"{uptime_text} (Sejak {discord.utils.format_dt(started_at, style='R')})", inline=False)
+
+        memory_mb = resource_stats.get("memory_mb")
+        if memory_mb is not None:
+            embed.add_field(name="Memori proses", value=f"{memory_mb:.1f} MB", inline=True)
+
+        load_average = resource_stats.get("load_average")
+        if isinstance(load_average, tuple) and any(value is not None for value in load_average):
+            formatted = " / ".join(
+                f"{value:.2f}" if isinstance(value, (int, float)) else "-"
+                for value in load_average
+            )
+            embed.add_field(name="Load Average (1m/5m/15m)", value=formatted, inline=True)
+
+        if job_list:
+            preview = ", ".join(job_list[:5])
+            embed.add_field(name="ID job aktif", value=self._limit_text(preview, 200), inline=False)
+
+        embed.set_footer(text="Gunakan /help untuk melihat seluruh kemampuan bot.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="jadwalsholat", description="Menampilkan jadwal sholat harian berdasarkan negara.")
     @app_commands.describe(

@@ -9,6 +9,7 @@ from bot.database import migrations
 from bot.database.repositories import (
     AnnouncementRepository,
     AutomodRepository,
+    AuditLogRepository,
     CoupleRepository,
     EconomyRepository,
     GuildSettingsRepository,
@@ -174,3 +175,27 @@ async def test_announcement_repository_flow(temp_db):
     cancelled = await repo.cancel(announcement.id)
     assert cancelled is True
     assert await repo.get(announcement.id) is not None
+
+
+@pytest.mark.asyncio()
+async def test_audit_repository_summary(temp_db):
+    repo = AuditLogRepository(temp_db)
+    guild_id = 42
+
+    await repo.add_entry(guild_id, "announcement.schedule", actor_id=1, target_id=10, context="1001")
+    await repo.add_entry(guild_id, "announcement.sent", actor_id=1, target_id=10, context="1001")
+    await repo.add_entry(guild_id, "moderation.warn", actor_id=2, target_id=11, context="warn-1")
+    await repo.add_entry(guild_id, "moderation.warn", actor_id=2, target_id=12, context="warn-2")
+
+    recent_moderation = await repo.recent_entries(guild_id, limit=2, action_prefix="moderation.")
+    assert len(recent_moderation) == 2
+    assert all(entry["action"].startswith("moderation") for entry in recent_moderation)
+
+    action_summary = await repo.action_summary(guild_id, limit=3)
+    summary_dict = dict(action_summary)
+    assert summary_dict.get("moderation.warn") == 2
+    assert summary_dict.get("announcement.sent") == 1
+
+    actor_summary = await repo.actor_summary(guild_id, limit=2)
+    actor_dict = dict(actor_summary)
+    assert actor_dict.get(2) == 2
