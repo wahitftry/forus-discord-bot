@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -19,8 +19,23 @@ class Scheduler:
         if self._scheduler.running:
             self._scheduler.shutdown(wait=wait)
 
+    def schedule_once(self, job_id: str, run_time, func: Callable[..., Awaitable[Any]], *args: Any) -> None:
+        self._scheduler.add_job(
+            func,
+            "date",
+            run_date=run_time,
+            args=list(args),
+            id=job_id,
+            replace_existing=True,
+        )
+
     def schedule_reminder(self, reminder_id: int, run_time, func: Callable[[int], Awaitable[None]]) -> None:
-        self._scheduler.add_job(func, "date", run_date=run_time, args=[reminder_id], id=f"reminder-{reminder_id}")
+        self.schedule_once(f"reminder-{reminder_id}", run_time, func, reminder_id)
 
     def has_job(self, job_id: str) -> bool:
         return self._scheduler.get_job(job_id) is not None
+
+    def cancel(self, job_id: str) -> None:
+        job = self._scheduler.get_job(job_id)
+        if job:
+            job.remove()

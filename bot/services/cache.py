@@ -35,3 +35,7 @@ class TTLCache:
             if value:
                 del self._store[key]
             return None
+
+    async def invalidate(self, key: str) -> None:
+        async with self._lock:
+            self._store.pop(key, None)

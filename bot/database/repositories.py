@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Optional, Sequence
@@ -917,3 +919,533 @@ class CoupleRepository:
             user_id,
         )
         return None if row is None else self._row_to_record(row)
+
+
+@dataclass(slots=True)
+class AutomodRule:
+    guild_id: int
+    rule_type: str
+    payload: dict[str, Any]
+    is_active: bool
+
+
+class AutomodRepository:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def _row_to_rule(self, row: Any) -> AutomodRule:
+        try:
+            payload = json.loads(row["value_json"])
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+        return AutomodRule(
+            guild_id=int(row["guild_id"]),
+            rule_type=str(row["rule_type"]),
+            payload=payload,
+            is_active=bool(row["is_active"]),
+        )
+
+    async def set_rule(
+        self,
+        guild_id: int,
+        rule_type: str,
+        payload: dict[str, Any],
+        *,
+        is_active: bool = True,
+    ) -> AutomodRule:
+        value_json = json.dumps(payload)
+        await self._db.execute(
+            """
+            INSERT INTO automod_rules (guild_id, rule_type, value_json, is_active)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id, rule_type) DO UPDATE SET
+                value_json = excluded.value_json,
+                is_active = excluded.is_active
+            """,
+            guild_id,
+            rule_type,
+            value_json,
+            1 if is_active else 0,
+        )
+        row = await self._db.fetchone(
+            "SELECT * FROM automod_rules WHERE guild_id = ? AND rule_type = ?",
+            guild_id,
+            rule_type,
+        )
+        assert row is not None
+        return self._row_to_rule(row)
+
+    async def set_active(self, guild_id: int, rule_type: str, is_active: bool) -> None:
+        await self._db.execute(
+            """
+            UPDATE automod_rules
+            SET is_active = ?
+            WHERE guild_id = ? AND rule_type = ?
+            """,
+            1 if is_active else 0,
+            guild_id,
+            rule_type,
+        )
+
+    async def get_rule(self, guild_id: int, rule_type: str) -> Optional[AutomodRule]:
+        row = await self._db.fetchone(
+            "SELECT * FROM automod_rules WHERE guild_id = ? AND rule_type = ?",
+            guild_id,
+            rule_type,
+        )
+        return None if row is None else self._row_to_rule(row)
+
+    async def list_rules(self, guild_id: int) -> list[AutomodRule]:
+        rows = await self._db.fetchall(
+            "SELECT * FROM automod_rules WHERE guild_id = ?",
+            guild_id,
+        )
+        return [self._row_to_rule(row) for row in rows]
+
+    async def delete_rule(self, guild_id: int, rule_type: str) -> None:
+        await self._db.execute(
+            "DELETE FROM automod_rules WHERE guild_id = ? AND rule_type = ?",
+            guild_id,
+            rule_type,
+        )
+
+
+class AuditLogRepository:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def add_entry(
+        self,
+        guild_id: int,
+        action: str,
+        actor_id: int,
+        *,
+        target_id: Optional[int] = None,
+        context: Optional[str] = None,
+    ) -> None:
+        await self._db.execute(
+            """
+            INSERT INTO audit_logs (guild_id, action, actor_id, target_id, context)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            guild_id,
+            action,
+            actor_id,
+            target_id,
+            context,
+        )
+
+    async def recent_entries(self, guild_id: int, limit: int = 10) -> list[dict[str, Any]]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM audit_logs
+            WHERE guild_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            guild_id,
+            limit,
+        )
+        return [dict(row) for row in rows]
+
+
+@dataclass(slots=True)
+class LevelProfileRecord:
+    guild_id: int
+    user_id: int
+    xp: int
+    level: int
+    last_message_at: Optional[str]
+    created_at: str
+    updated_at: str
+
+
+@dataclass(slots=True)
+class LevelProgress:
+    profile: LevelProfileRecord
+    xp_into_level: int
+    xp_for_next_level: int
+    leveled_up: bool
+
+    @property
+    def xp_remaining(self) -> int:
+        return max(self.xp_for_next_level - self.xp_into_level, 0)
+
+
+@dataclass(slots=True)
+class LevelReward:
+    guild_id: int
+    level: int
+    role_id: int
+
+
+class LevelRepository:
+    DEFAULT_COOLDOWN_SECONDS = 60
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def _row_to_profile(self, row: Any) -> LevelProfileRecord:
+        return LevelProfileRecord(
+            guild_id=int(row["guild_id"]),
+            user_id=int(row["user_id"]),
+            xp=int(row["xp"] or 0),
+            level=int(row["level"] or 0),
+            last_message_at=row["last_message_at"],
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+
+    def _xp_to_next_level(self, level: int) -> int:
+        return 5 * (level ** 2) + 50 * level + 100
+
+    def _calculate_progress(self, xp_total: int) -> tuple[int, int, int]:
+        level = 0
+        remaining = xp_total
+        while True:
+            threshold = self._xp_to_next_level(level)
+            if remaining < threshold:
+                return level, remaining, threshold
+            remaining -= threshold
+            level += 1
+
+    async def get_profile(self, guild_id: int, user_id: int) -> LevelProfileRecord:
+        row = await self._db.fetchone(
+            "SELECT * FROM level_profiles WHERE guild_id = ? AND user_id = ?",
+            guild_id,
+            user_id,
+        )
+        if row is None:
+            await self._db.execute(
+                """
+                INSERT INTO level_profiles (guild_id, user_id)
+                VALUES (?, ?)
+                """,
+                guild_id,
+                user_id,
+            )
+            row = await self._db.fetchone(
+                "SELECT * FROM level_profiles WHERE guild_id = ? AND user_id = ?",
+                guild_id,
+                user_id,
+            )
+            assert row is not None
+        return self._row_to_profile(row)
+
+    async def get_progress(self, guild_id: int, user_id: int) -> LevelProgress:
+        profile = await self.get_profile(guild_id, user_id)
+        level, xp_into_level, xp_for_next_level = self._calculate_progress(profile.xp)
+        if level != profile.level:
+            profile = await self._update_level(guild_id, user_id, profile, level)
+        return LevelProgress(profile, xp_into_level, xp_for_next_level, False)
+
+    async def _update_level(
+        self,
+        guild_id: int,
+        user_id: int,
+        profile: LevelProfileRecord,
+        level: int,
+    ) -> LevelProfileRecord:
+        await self._db.execute(
+            """
+            UPDATE level_profiles
+            SET level = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE guild_id = ? AND user_id = ?
+            """,
+            level,
+            guild_id,
+            user_id,
+        )
+        row = await self._db.fetchone(
+            "SELECT * FROM level_profiles WHERE guild_id = ? AND user_id = ?",
+            guild_id,
+            user_id,
+        )
+        assert row is not None
+        return self._row_to_profile(row)
+
+    async def add_xp(
+        self,
+        guild_id: int,
+        user_id: int,
+        amount: int,
+        *,
+        now: Optional[datetime] = None,
+        cooldown_seconds: Optional[int] = None,
+    ) -> LevelProgress:
+        if amount <= 0:
+            return await self.get_progress(guild_id, user_id)
+
+        profile = await self.get_profile(guild_id, user_id)
+        now = now or datetime.now(timezone.utc)
+        cooldown = cooldown_seconds or self.DEFAULT_COOLDOWN_SECONDS
+
+        if profile.last_message_at:
+            try:
+                last = datetime.fromisoformat(profile.last_message_at)
+            except ValueError:
+                last = None
+            if last and now - last < timedelta(seconds=cooldown):
+                level, xp_into_level, xp_for_next_level = self._calculate_progress(profile.xp)
+                return LevelProgress(profile, xp_into_level, xp_for_next_level, False)
+
+        new_xp = profile.xp + amount
+        new_level, xp_into_level, xp_for_next_level = self._calculate_progress(new_xp)
+        leveled_up = new_level > profile.level
+
+        await self._db.execute(
+            """
+            INSERT INTO level_profiles (guild_id, user_id, xp, level, last_message_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                xp = excluded.xp,
+                level = excluded.level,
+                last_message_at = excluded.last_message_at,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            guild_id,
+            user_id,
+            new_xp,
+            new_level,
+            now.isoformat(),
+        )
+        row = await self._db.fetchone(
+            "SELECT * FROM level_profiles WHERE guild_id = ? AND user_id = ?",
+            guild_id,
+            user_id,
+        )
+        assert row is not None
+        updated_profile = self._row_to_profile(row)
+        return LevelProgress(updated_profile, xp_into_level, xp_for_next_level, leveled_up)
+
+    async def list_leaderboard(self, guild_id: int, limit: int = 10) -> list[LevelProfileRecord]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM level_profiles
+            WHERE guild_id = ?
+            ORDER BY level DESC, xp DESC
+            LIMIT ?
+            """,
+            guild_id,
+            limit,
+        )
+        return [self._row_to_profile(row) for row in rows]
+
+    async def list_profiles_with_min_level(self, guild_id: int, min_level: int) -> list[LevelProfileRecord]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM level_profiles
+            WHERE guild_id = ? AND level >= ?
+            ORDER BY level DESC, xp DESC
+            """,
+            guild_id,
+            min_level,
+        )
+        return [self._row_to_profile(row) for row in rows]
+
+    async def set_reward(self, guild_id: int, level: int, role_id: int) -> LevelReward:
+        await self._db.execute(
+            """
+            INSERT INTO level_rewards (guild_id, level, role_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(guild_id, level) DO UPDATE SET role_id = excluded.role_id
+            """,
+            guild_id,
+            level,
+            role_id,
+        )
+        row = await self._db.fetchone(
+            "SELECT * FROM level_rewards WHERE guild_id = ? AND level = ?",
+            guild_id,
+            level,
+        )
+        assert row is not None
+        return LevelReward(guild_id=guild_id, level=int(row["level"]), role_id=int(row["role_id"]))
+
+    async def remove_reward(self, guild_id: int, level: int) -> bool:
+        row = await self._db.fetchone(
+            "SELECT id FROM level_rewards WHERE guild_id = ? AND level = ?",
+            guild_id,
+            level,
+        )
+        if row is None:
+            return False
+        await self._db.execute(
+            "DELETE FROM level_rewards WHERE guild_id = ? AND level = ?",
+            guild_id,
+            level,
+        )
+        return True
+
+    async def list_rewards(self, guild_id: int) -> list[LevelReward]:
+        rows = await self._db.fetchall(
+            "SELECT * FROM level_rewards WHERE guild_id = ? ORDER BY level",
+            guild_id,
+        )
+        return [LevelReward(guild_id=guild_id, level=int(row["level"]), role_id=int(row["role_id"])) for row in rows]
+
+    async def get_reward_for_level(self, guild_id: int, level: int) -> Optional[LevelReward]:
+        row = await self._db.fetchone(
+            "SELECT * FROM level_rewards WHERE guild_id = ? AND level = ?",
+            guild_id,
+            level,
+        )
+        if row is None:
+            return None
+        return LevelReward(guild_id=guild_id, level=int(row["level"]), role_id=int(row["role_id"]))
+
+
+@dataclass(slots=True)
+class ScheduledAnnouncement:
+    id: int
+    guild_id: int
+    channel_id: int
+    author_id: int
+    content: Optional[str]
+    embed_title: Optional[str]
+    embed_description: Optional[str]
+    mention_role_id: Optional[int]
+    image_url: Optional[str]
+    scheduled_at: str
+    status: str
+    created_at: str
+    delivered_at: Optional[str]
+
+
+class AnnouncementRepository:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def _row_to_announcement(self, row: Any) -> ScheduledAnnouncement:
+        return ScheduledAnnouncement(
+            id=int(row["id"]),
+            guild_id=int(row["guild_id"]),
+            channel_id=int(row["channel_id"]),
+            author_id=int(row["author_id"]),
+            content=row["content"],
+            embed_title=row["embed_title"],
+            embed_description=row["embed_description"],
+            mention_role_id=row["mention_role_id"],
+            image_url=row["image_url"],
+            scheduled_at=str(row["scheduled_at"]),
+            status=str(row["status"]),
+            created_at=str(row["created_at"]),
+            delivered_at=row["delivered_at"],
+        )
+
+    async def create(
+        self,
+        guild_id: int,
+        channel_id: int,
+        author_id: int,
+        *,
+        content: Optional[str],
+        embed_title: Optional[str],
+        embed_description: Optional[str],
+        mention_role_id: Optional[int],
+        image_url: Optional[str],
+        scheduled_at: str,
+    ) -> ScheduledAnnouncement:
+        await self._db.execute(
+            """
+            INSERT INTO scheduled_announcements (
+                guild_id,
+                channel_id,
+                author_id,
+                content,
+                embed_title,
+                embed_description,
+                mention_role_id,
+                image_url,
+                scheduled_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            guild_id,
+            channel_id,
+            author_id,
+            content,
+            embed_title,
+            embed_description,
+            mention_role_id,
+            image_url,
+            scheduled_at,
+        )
+        row = await self._db.fetchone(
+            "SELECT * FROM scheduled_announcements WHERE id = last_insert_rowid()",
+        )
+        if row is None:
+            raise RuntimeError("Gagal membuat jadwal pengumuman")
+        return self._row_to_announcement(row)
+
+    async def get(self, announcement_id: int) -> Optional[ScheduledAnnouncement]:
+        row = await self._db.fetchone(
+            "SELECT * FROM scheduled_announcements WHERE id = ?",
+            announcement_id,
+        )
+        return None if row is None else self._row_to_announcement(row)
+
+    async def list_pending(self, guild_id: int) -> list[ScheduledAnnouncement]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM scheduled_announcements
+            WHERE guild_id = ? AND status = 'pending'
+            ORDER BY scheduled_at ASC
+            """,
+            guild_id,
+        )
+        return [self._row_to_announcement(row) for row in rows]
+
+    async def list_pending_all(self) -> list[ScheduledAnnouncement]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM scheduled_announcements
+            WHERE status = 'pending'
+            ORDER BY scheduled_at ASC
+            """,
+        )
+        return [self._row_to_announcement(row) for row in rows]
+
+    async def list_due(self, now_iso: str) -> list[ScheduledAnnouncement]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM scheduled_announcements
+            WHERE status = 'pending' AND scheduled_at <= ?
+            ORDER BY scheduled_at ASC
+            """,
+            now_iso,
+        )
+        return [self._row_to_announcement(row) for row in rows]
+
+    async def mark_sent(self, announcement_id: int) -> None:
+        await self._db.execute(
+            """
+            UPDATE scheduled_announcements
+            SET status = 'sent',
+                delivered_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            announcement_id,
+        )
+
+    async def cancel(self, announcement_id: int) -> bool:
+        row = await self._db.fetchone(
+            """
+            SELECT status FROM scheduled_announcements
+            WHERE id = ?
+            """,
+            announcement_id,
+        )
+        if row is None or row["status"] != "pending":
+            return False
+        await self._db.execute(
+            """
+            UPDATE scheduled_announcements
+            SET status = 'cancelled',
+                delivered_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            announcement_id,
+        )
+        return True

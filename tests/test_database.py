@@ -6,7 +6,15 @@ import pytest_asyncio
 
 from bot.database.core import Database
 from bot.database import migrations
-from bot.database.repositories import CoupleRepository, EconomyRepository, GuildSettingsRepository, ReminderRepository
+from bot.database.repositories import (
+    AnnouncementRepository,
+    AutomodRepository,
+    CoupleRepository,
+    EconomyRepository,
+    GuildSettingsRepository,
+    LevelRepository,
+    ReminderRepository,
+)
 
 
 @pytest_asyncio.fixture()
@@ -116,3 +124,53 @@ async def test_couple_reject_clears_pending(temp_db):
     assert not await repo.user_has_active_or_pending(guild_id, initiator)
     assert not await repo.user_has_active_or_pending(guild_id, target)
     assert await repo.get_pending_for_target(guild_id, target) is None
+
+
+@pytest.mark.asyncio()
+async def test_automod_rule_upsert(temp_db):
+    repo = AutomodRepository(temp_db)
+    guild_id = 77
+    payload = {"max_mentions": 3}
+    rule = await repo.set_rule(guild_id, "mention_limit", payload)
+    assert rule.rule_type == "mention_limit"
+    assert rule.payload == payload
+    fetched = await repo.get_rule(guild_id, "mention_limit")
+    assert fetched is not None and fetched.payload["max_mentions"] == 3
+    await repo.set_active(guild_id, "mention_limit", False)
+    updated = await repo.get_rule(guild_id, "mention_limit")
+    assert updated is not None and updated.is_active is False
+
+
+@pytest.mark.asyncio()
+async def test_level_repository_level_up_and_rewards(temp_db):
+    repo = LevelRepository(temp_db)
+    guild_id = 88
+    user_id = 999
+    progress = await repo.add_xp(guild_id, user_id, 500)
+    assert progress.profile.level >= 1
+    reward = await repo.set_reward(guild_id, progress.profile.level, 12345)
+    assert reward.role_id == 12345
+    listed = await repo.list_rewards(guild_id)
+    assert any(r.level == progress.profile.level for r in listed)
+    assert await repo.get_reward_for_level(guild_id, progress.profile.level) is not None
+
+
+@pytest.mark.asyncio()
+async def test_announcement_repository_flow(temp_db):
+    repo = AnnouncementRepository(temp_db)
+    announcement = await repo.create(
+        guild_id=999,
+        channel_id=111,
+        author_id=222,
+        content="Halo",
+        embed_title=None,
+        embed_description=None,
+        mention_role_id=None,
+        image_url=None,
+        scheduled_at="2025-01-01T00:00:00+00:00",
+    )
+    pending = await repo.list_pending(999)
+    assert any(item.id == announcement.id for item in pending)
+    cancelled = await repo.cancel(announcement.id)
+    assert cancelled is True
+    assert await repo.get(announcement.id) is not None

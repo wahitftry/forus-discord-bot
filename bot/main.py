@@ -9,7 +9,19 @@ from discord.ext import commands
 from .config import BotConfig, load_config
 from .database.core import Database
 from .database import migrations
-from .database.repositories import GuildSettingsRepository, EconomyRepository, ReminderRepository, WarnRepository, TicketRepository, ShopRepository, CoupleRepository
+from .database.repositories import (
+    GuildSettingsRepository,
+    EconomyRepository,
+    ReminderRepository,
+    WarnRepository,
+    TicketRepository,
+    ShopRepository,
+    CoupleRepository,
+    AutomodRepository,
+    AuditLogRepository,
+    LevelRepository,
+    AnnouncementRepository,
+)
 from .services.logging import setup_logging, get_logger
 from .services.scheduler import Scheduler
 
@@ -34,6 +46,10 @@ class ForUS(commands.Bot):
         self.ticket_repo: TicketRepository | None = None
         self.shop_repo: ShopRepository | None = None
         self.couple_repo: CoupleRepository | None = None
+        self.automod_repo: AutomodRepository | None = None
+        self.audit_repo: AuditLogRepository | None = None
+        self.level_repo: LevelRepository | None = None
+        self.announcement_repo: AnnouncementRepository | None = None
         self.scheduler = Scheduler()
         self.log = get_logger("ForUS")
 
@@ -61,6 +77,10 @@ class ForUS(commands.Bot):
         self.ticket_repo = TicketRepository(self.db)
         self.shop_repo = ShopRepository(self.db)
         self.couple_repo = CoupleRepository(self.db)
+        self.automod_repo = AutomodRepository(self.db)
+        self.audit_repo = AuditLogRepository(self.db)
+        self.level_repo = LevelRepository(self.db)
+        self.announcement_repo = AnnouncementRepository(self.db)
 
     async def _load_cogs(self) -> None:
         for extension in (
@@ -73,6 +93,9 @@ class ForUS(commands.Bot):
             "bot.cogs.fun",
             "bot.cogs.tickets",
             "bot.cogs.events",
+            "bot.cogs.automod",
+            "bot.cogs.levels",
+            "bot.cogs.announcements",
         ):
             try:
                 await self.load_extension(extension)

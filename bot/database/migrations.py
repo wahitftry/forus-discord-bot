@@ -197,6 +197,52 @@ CREATE_TABLE_QUERIES: Sequence[str] = (
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     """
+    ,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_automod_rules_guild_type
+    ON automod_rules (guild_id, rule_type);
+    """
+    ,
+    """
+    CREATE TABLE IF NOT EXISTS level_profiles (
+        guild_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        xp INTEGER DEFAULT 0,
+        level INTEGER DEFAULT 0,
+        last_message_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, user_id)
+    );
+    """
+    ,
+    """
+    CREATE TABLE IF NOT EXISTS level_rewards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id INTEGER NOT NULL,
+        level INTEGER NOT NULL,
+        role_id INTEGER NOT NULL,
+        UNIQUE (guild_id, level)
+    );
+    """
+    ,
+    """
+    CREATE TABLE IF NOT EXISTS scheduled_announcements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id INTEGER NOT NULL,
+        channel_id INTEGER NOT NULL,
+        author_id INTEGER NOT NULL,
+        content TEXT,
+        embed_title TEXT,
+        embed_description TEXT,
+        mention_role_id INTEGER,
+        image_url TEXT,
+        scheduled_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        delivered_at TEXT
+    );
+    """
 )
 
 
