@@ -18,6 +18,17 @@ class GuildSettings:
     autorole_id: Optional[int]
     timezone: str
     ticket_category_id: Optional[int]
+    activity_log_channel_id: Optional[int]
+    activity_log_enabled: bool
+    activity_log_disabled_events: list[str]
+
+    def effective_activity_channel(self) -> Optional[int]:
+        return self.activity_log_channel_id or self.log_channel_id
+
+    def is_activity_category_enabled(self, category: str) -> bool:
+        if not self.activity_log_enabled:
+            return False
+        return category not in self.activity_log_disabled_events
 
 
 class GuildSettingsRepository:
@@ -28,6 +39,17 @@ class GuildSettingsRepository:
         row = await self._db.fetchone("SELECT * FROM guild_settings WHERE guild_id = ?", guild_id)
         if row is None:
             return None
+        row_keys = row.keys()
+        disabled_raw = row["activity_log_disabled_events"] if "activity_log_disabled_events" in row_keys else "[]"
+        try:
+            disabled_events = [
+                str(item)
+                for item in json.loads(disabled_raw)  # type: ignore[arg-type]
+                if isinstance(item, str)
+            ]
+        except (TypeError, json.JSONDecodeError):
+            disabled_events = []
+
         return GuildSettings(
             guild_id=row["guild_id"],
             welcome_channel_id=row["welcome_channel_id"],
@@ -36,6 +58,9 @@ class GuildSettingsRepository:
             autorole_id=row["autorole_id"],
             timezone=row["timezone"],
             ticket_category_id=row["ticket_category_id"],
+            activity_log_channel_id=row["activity_log_channel_id"] if "activity_log_channel_id" in row_keys else None,
+            activity_log_enabled=bool(row["activity_log_enabled"]) if "activity_log_enabled" in row_keys else True,
+            activity_log_disabled_events=disabled_events,
         )
 
     async def upsert(self, guild_id: int, **kwargs: Any) -> None:
@@ -48,6 +73,35 @@ class GuildSettingsRepository:
             "timezone": kwargs.get("timezone", existing.timezone if existing else "Asia/Jakarta"),
             "ticket_category_id": kwargs.get("ticket_category_id", existing.ticket_category_id if existing else None),
         }
+        data["activity_log_channel_id"] = kwargs.get(
+            "activity_log_channel_id",
+            existing.activity_log_channel_id if existing else None,
+        )
+        activity_enabled_input = kwargs.get(
+            "activity_log_enabled",
+            existing.activity_log_enabled if existing else True,
+        )
+        data["activity_log_enabled"] = 1 if bool(activity_enabled_input) else 0
+
+        disabled_input = kwargs.get(
+            "activity_log_disabled_events",
+            existing.activity_log_disabled_events if existing else [],
+        )
+
+        if isinstance(disabled_input, str):
+            try:
+                disabled_events = [
+                    str(item)
+                    for item in json.loads(disabled_input)  # type: ignore[arg-type]
+                    if isinstance(item, str)
+                ]
+            except (TypeError, json.JSONDecodeError):
+                disabled_events = []
+        else:
+            disabled_events = [str(item) for item in disabled_input]
+
+        data["activity_log_disabled_events"] = json.dumps(sorted(set(disabled_events)))
+
         if existing:
             await self._db.execute(
                 """
@@ -58,6 +112,9 @@ class GuildSettingsRepository:
                     autorole_id = ?,
                     timezone = ?,
                     ticket_category_id = ?,
+                    activity_log_channel_id = ?,
+                    activity_log_enabled = ?,
+                    activity_log_disabled_events = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE guild_id = ?
                 """,
@@ -67,6 +124,9 @@ class GuildSettingsRepository:
                 data["autorole_id"],
                 data["timezone"],
                 data["ticket_category_id"],
+                data["activity_log_channel_id"],
+                data["activity_log_enabled"],
+                data["activity_log_disabled_events"],
                 guild_id,
             )
         else:
@@ -79,8 +139,11 @@ class GuildSettingsRepository:
                     log_channel_id,
                     autorole_id,
                     timezone,
-                    ticket_category_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ticket_category_id,
+                    activity_log_channel_id,
+                    activity_log_enabled,
+                    activity_log_disabled_events
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 guild_id,
                 data["welcome_channel_id"],
@@ -89,8 +152,10 @@ class GuildSettingsRepository:
                 data["autorole_id"],
                 data["timezone"],
                 data["ticket_category_id"],
+                data["activity_log_channel_id"],
+                data["activity_log_enabled"],
+                data["activity_log_disabled_events"],
             )
-
 
 class EconomyRepository:
     def __init__(self, db: Database) -> None:

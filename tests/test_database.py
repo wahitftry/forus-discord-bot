@@ -42,6 +42,29 @@ async def test_guild_settings_upsert(temp_db):
 
 
 @pytest.mark.asyncio()
+async def test_guild_settings_activity_log_fields(temp_db):
+    repo = GuildSettingsRepository(temp_db)
+    await repo.upsert(
+        321,
+        activity_log_channel_id=9876,
+        activity_log_enabled=False,
+        activity_log_disabled_events=["voice", "messages", "voice"],
+    )
+    settings = await repo.get(321)
+    assert settings is not None
+    assert settings.activity_log_channel_id == 9876
+    assert settings.activity_log_enabled is False
+    assert settings.activity_log_disabled_events == ["messages", "voice"]
+
+    await repo.upsert(321, activity_log_enabled=True, activity_log_disabled_events=[])
+    settings = await repo.get(321)
+    assert settings is not None
+    assert settings.activity_log_enabled is True
+    assert settings.activity_log_disabled_events == []
+    assert settings.activity_log_channel_id == 9876
+
+
+@pytest.mark.asyncio()
 async def test_economy_balance(temp_db):
     repo = EconomyRepository(temp_db)
     balance = await repo.get_balance(1, 1)
