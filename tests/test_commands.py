@@ -31,7 +31,7 @@ async def test_synchronize_global_commands_only_cleans_guild_commands():
     try:
         await bot._synchronize_global_commands_only()
 
-        assert bot.tree.clear_commands.call_count == len(guild_ids) * 2
+        assert bot.tree.clear_commands.call_count == len(guild_ids)
         cleared_guild_ids = {call.kwargs["guild"].id for call in bot.tree.clear_commands.call_args_list}
         assert cleared_guild_ids == set(guild_ids)
 

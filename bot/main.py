@@ -110,16 +110,19 @@ class ForUS(commands.Bot):
             return
         await self._synchronize_global_commands_only()
 
+    async def _sync_commands_for_guild(self, guild_id: int) -> None:
+        guild = discord.Object(id=guild_id)
+        try:
+            self.tree.copy_global_to(guild=guild)
+            self.tree.clear_commands(guild=guild)
+            await self.tree.sync(guild=guild)
+            self.log.info("Sinkronisasi perintah untuk guild %s", guild_id)
+        except Exception:  # noqa: BLE001
+            self.log.exception("Gagal sinkronisasi command untuk guild %s", guild_id)
+
     async def _synchronize_guild_commands(self, guild_ids: list[int]) -> None:
         for guild_id in guild_ids:
-            try:
-                guild = discord.Object(id=guild_id)
-                self.tree.clear_commands(guild=guild)
-                self.tree.copy_global_to(guild=guild)
-                await self.tree.sync(guild=guild)
-                self.log.info("Sinkronisasi perintah slash untuk guild %s", guild_id)
-            except Exception:  # noqa: BLE001
-                self.log.exception("Gagal sinkronisasi command untuk guild %s", guild_id)
+            await self._sync_commands_for_guild(guild_id)
         try:
             self.tree.clear_commands(guild=None)
             await self.tree.sync()
@@ -128,26 +131,15 @@ class ForUS(commands.Bot):
             self.log.exception("Gagal membersihkan perintah global")
 
     async def _synchronize_global_commands_only(self) -> None:
-        guild_ids: list[int] = []
         seen_guilds: set[int] = set()
         try:
             async for partial_guild in self.fetch_guilds(limit=None):
-                if partial_guild.id not in seen_guilds:
-                    seen_guilds.add(partial_guild.id)
-                    guild_ids.append(partial_guild.id)
+                if partial_guild.id in seen_guilds:
+                    continue
+                seen_guilds.add(partial_guild.id)
+                await self._sync_commands_for_guild(partial_guild.id)
         except Exception:  # noqa: BLE001
             self.log.exception("Gagal mengambil daftar guild untuk pembersihan command")
-
-        for guild_id in guild_ids:
-            guild = discord.Object(id=guild_id)
-            try:
-                self.tree.clear_commands(guild=guild)
-                self.tree.copy_global_to(guild=guild)
-                self.tree.clear_commands(guild=guild)
-                await self.tree.sync(guild=guild)
-                self.log.info("Sinkronisasi perintah untuk guild %s", guild_id)
-            except Exception:  # noqa: BLE001
-                self.log.exception("Gagal sinkronisasi command untuk guild %s", guild_id)
 
         try:
             await self.tree.sync()
