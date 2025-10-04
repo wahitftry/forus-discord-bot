@@ -117,6 +117,66 @@ CREATE_TABLE_QUERIES: Sequence[str] = (
     WHERE status IN ('pending', 'active');
     """,
     """
+    CREATE TABLE IF NOT EXISTS couple_profiles (
+        couple_id INTEGER PRIMARY KEY,
+        title TEXT,
+        theme_color TEXT,
+        love_song TEXT,
+        bio TEXT,
+        current_mood TEXT,
+        last_checkin_date TEXT,
+        checkin_streak INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (couple_id) REFERENCES couples(id) ON DELETE CASCADE
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS couple_memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        couple_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        created_by INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (couple_id) REFERENCES couples(id) ON DELETE CASCADE
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS couple_checkins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        couple_id INTEGER NOT NULL,
+        checkin_date TEXT NOT NULL,
+        member_one_checked INTEGER DEFAULT 0,
+        member_two_checked INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (couple_id, checkin_date),
+        FOREIGN KEY (couple_id) REFERENCES couples(id) ON DELETE CASCADE
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS couple_milestones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        couple_id INTEGER NOT NULL,
+        milestone_key TEXT NOT NULL,
+        achieved_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (couple_id, milestone_key),
+        FOREIGN KEY (couple_id) REFERENCES couples(id) ON DELETE CASCADE
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS couple_gifts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        couple_id INTEGER NOT NULL,
+        gift_key TEXT NOT NULL,
+        given_by INTEGER NOT NULL,
+        message TEXT,
+        love_points_awarded INTEGER NOT NULL,
+        cost INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (couple_id) REFERENCES couples(id) ON DELETE CASCADE
+    );
+    """,
+    """
     CREATE TABLE IF NOT EXISTS audit_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id INTEGER NOT NULL,

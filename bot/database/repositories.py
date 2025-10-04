@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Optional, Sequence
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Iterable, Optional, Sequence
 
 from .core import Database
 
@@ -318,6 +318,67 @@ class CoupleRecord:
         return None
 
 
+@dataclass(slots=True)
+class CoupleProfile:
+    couple_id: int
+    title: Optional[str]
+    theme_color: Optional[str]
+    love_song: Optional[str]
+    bio: Optional[str]
+    current_mood: Optional[str]
+    last_checkin_date: Optional[str]
+    checkin_streak: int
+    updated_at: str
+
+
+@dataclass(slots=True)
+class CoupleMemory:
+    id: int
+    couple_id: int
+    title: str
+    description: Optional[str]
+    created_by: int
+    created_at: str
+
+
+@dataclass(slots=True)
+class CoupleGift:
+    id: int
+    couple_id: int
+    gift_key: str
+    given_by: int
+    message: Optional[str]
+    love_points_awarded: int
+    cost: int
+    created_at: str
+
+
+@dataclass(slots=True)
+class CoupleMilestone:
+    id: int
+    couple_id: int
+    milestone_key: str
+    achieved_at: str
+
+
+@dataclass(slots=True)
+class CoupleCheckin:
+    id: int
+    couple_id: int
+    checkin_date: str
+    member_one_checked: bool
+    member_two_checked: bool
+    updated_at: str
+
+
+@dataclass(slots=True)
+class CheckinResult:
+    status: str
+    profile: CoupleProfile
+    checkin: CoupleCheckin
+    streak_updated: bool
+
+
 class CoupleRepository:
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -340,6 +401,59 @@ class CoupleRepository:
             updated_at=str(row["updated_at"]),
             ended_at=row["ended_at"],
             ended_by=row["ended_by"],
+        )
+
+    def _row_to_profile(self, row: Any) -> CoupleProfile:
+        return CoupleProfile(
+            couple_id=int(row["couple_id"]),
+            title=row["title"],
+            theme_color=row["theme_color"],
+            love_song=row["love_song"],
+            bio=row["bio"],
+            current_mood=row["current_mood"],
+            last_checkin_date=row["last_checkin_date"],
+            checkin_streak=int(row["checkin_streak"] or 0),
+            updated_at=str(row["updated_at"]),
+        )
+
+    def _row_to_memory(self, row: Any) -> CoupleMemory:
+        return CoupleMemory(
+            id=int(row["id"]),
+            couple_id=int(row["couple_id"]),
+            title=str(row["title"]),
+            description=row["description"],
+            created_by=int(row["created_by"]),
+            created_at=str(row["created_at"]),
+        )
+
+    def _row_to_gift(self, row: Any) -> CoupleGift:
+        return CoupleGift(
+            id=int(row["id"]),
+            couple_id=int(row["couple_id"]),
+            gift_key=str(row["gift_key"]),
+            given_by=int(row["given_by"]),
+            message=row["message"],
+            love_points_awarded=int(row["love_points_awarded"]),
+            cost=int(row["cost"]),
+            created_at=str(row["created_at"]),
+        )
+
+    def _row_to_milestone(self, row: Any) -> CoupleMilestone:
+        return CoupleMilestone(
+            id=int(row["id"]),
+            couple_id=int(row["couple_id"]),
+            milestone_key=str(row["milestone_key"]),
+            achieved_at=str(row["achieved_at"]),
+        )
+
+    def _row_to_checkin(self, row: Any) -> CoupleCheckin:
+        return CoupleCheckin(
+            id=int(row["id"]),
+            couple_id=int(row["couple_id"]),
+            checkin_date=str(row["checkin_date"]),
+            member_one_checked=bool(row["member_one_checked"]),
+            member_two_checked=bool(row["member_two_checked"]),
+            updated_at=str(row["updated_at"]),
         )
 
     async def get_by_id(self, couple_id: int) -> Optional[CoupleRecord]:
@@ -371,6 +485,284 @@ class CoupleRepository:
         query += " ORDER BY created_at DESC LIMIT 1"
         row = await self._db.fetchone(query, *params)
         return None if row is None else self._row_to_record(row)
+
+    async def get_profile(self, couple_id: int) -> CoupleProfile:
+        row = await self._db.fetchone(
+            "SELECT * FROM couple_profiles WHERE couple_id = ?",
+            couple_id,
+        )
+        if row is None:
+            await self._db.execute(
+                "INSERT INTO couple_profiles (couple_id) VALUES (?)",
+                couple_id,
+            )
+            row = await self._db.fetchone(
+                "SELECT * FROM couple_profiles WHERE couple_id = ?",
+                couple_id,
+            )
+        assert row is not None
+        return self._row_to_profile(row)
+
+    async def update_profile(self, couple_id: int, **fields: Any) -> CoupleProfile:
+        allowed = {
+            "title",
+            "theme_color",
+            "love_song",
+            "bio",
+            "current_mood",
+            "last_checkin_date",
+            "checkin_streak",
+        }
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return await self.get_profile(couple_id)
+        set_clause = ", ".join(f"{key} = ?" for key in updates)
+        params = list(updates.values())
+        params.append(couple_id)
+        await self._db.execute(
+            f"""
+            UPDATE couple_profiles
+            SET {set_clause},
+                updated_at = CURRENT_TIMESTAMP
+            WHERE couple_id = ?
+            """,
+            *params,
+        )
+        return await self.get_profile(couple_id)
+
+    async def list_memories(self, couple_id: int, limit: int = 10) -> list[CoupleMemory]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM couple_memories
+            WHERE couple_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            couple_id,
+            limit,
+        )
+        return [self._row_to_memory(row) for row in rows]
+
+    async def get_latest_memory(self, couple_id: int) -> Optional[CoupleMemory]:
+        row = await self._db.fetchone(
+            """
+            SELECT * FROM couple_memories
+            WHERE couple_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            couple_id,
+        )
+        return None if row is None else self._row_to_memory(row)
+
+    async def count_memories(self, couple_id: int) -> int:
+        row = await self._db.fetchone(
+            "SELECT COUNT(*) as total FROM couple_memories WHERE couple_id = ?",
+            couple_id,
+        )
+        return int(row["total"]) if row is not None else 0
+
+    async def add_memory(self, couple_id: int, title: str, description: Optional[str], created_by: int) -> CoupleMemory:
+        await self._db.execute(
+            """
+            INSERT INTO couple_memories (couple_id, title, description, created_by)
+            VALUES (?, ?, ?, ?)
+            """,
+            couple_id,
+            title,
+            description,
+            created_by,
+        )
+        row = await self._db.fetchone("SELECT * FROM couple_memories WHERE id = last_insert_rowid()")
+        if row is None:
+            raise RuntimeError("Gagal menambahkan memori pasangan")
+        return self._row_to_memory(row)
+
+    async def delete_memory(self, couple_id: int, memory_id: int) -> bool:
+        exists = await self._db.fetchone(
+            "SELECT id FROM couple_memories WHERE id = ? AND couple_id = ?",
+            memory_id,
+            couple_id,
+        )
+        if exists is None:
+            return False
+        await self._db.execute(
+            "DELETE FROM couple_memories WHERE id = ?",
+            memory_id,
+        )
+        return True
+
+    async def list_gifts(self, couple_id: int, limit: int = 10) -> list[CoupleGift]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM couple_gifts
+            WHERE couple_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            couple_id,
+            limit,
+        )
+        return [self._row_to_gift(row) for row in rows]
+
+    async def add_gift(
+        self,
+        couple_id: int,
+        gift_key: str,
+        given_by: int,
+        message: Optional[str],
+        love_points_awarded: int,
+        cost: int,
+    ) -> CoupleGift:
+        await self._db.execute(
+            """
+            INSERT INTO couple_gifts (couple_id, gift_key, given_by, message, love_points_awarded, cost)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            couple_id,
+            gift_key,
+            given_by,
+            message,
+            love_points_awarded,
+            cost,
+        )
+        row = await self._db.fetchone("SELECT * FROM couple_gifts WHERE id = last_insert_rowid()")
+        if row is None:
+            raise RuntimeError("Gagal mencatat hadiah pasangan")
+        return self._row_to_gift(row)
+
+    async def list_milestones(self, couple_id: int) -> list[CoupleMilestone]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM couple_milestones
+            WHERE couple_id = ?
+            ORDER BY achieved_at ASC
+            """,
+            couple_id,
+        )
+        return [self._row_to_milestone(row) for row in rows]
+
+    async def has_milestone(self, couple_id: int, milestone_key: str) -> bool:
+        row = await self._db.fetchone(
+            "SELECT id FROM couple_milestones WHERE couple_id = ? AND milestone_key = ?",
+            couple_id,
+            milestone_key,
+        )
+        return row is not None
+
+    async def record_milestone(self, couple_id: int, milestone_key: str) -> CoupleMilestone:
+        await self._db.execute(
+            """
+            INSERT OR IGNORE INTO couple_milestones (couple_id, milestone_key)
+            VALUES (?, ?)
+            """,
+            couple_id,
+            milestone_key,
+        )
+        row = await self._db.fetchone(
+            "SELECT * FROM couple_milestones WHERE couple_id = ? AND milestone_key = ?",
+            couple_id,
+            milestone_key,
+        )
+        if row is None:
+            raise RuntimeError("Gagal mencatat milestone pasangan")
+        return self._row_to_milestone(row)
+
+    async def list_checkins(self, couple_id: int, limit: int = 7) -> list[CoupleCheckin]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM couple_checkins
+            WHERE couple_id = ?
+            ORDER BY checkin_date DESC
+            LIMIT ?
+            """,
+            couple_id,
+            limit,
+        )
+        return [self._row_to_checkin(row) for row in rows]
+
+    async def record_checkin(self, record: CoupleRecord, user_id: int) -> CheckinResult:
+        if not record.is_member(user_id):
+            raise ValueError("Pengguna bukan bagian dari pasangan ini")
+
+        profile = await self.get_profile(record.id)
+        today = date.today()
+        today_str = today.isoformat()
+
+        if profile.last_checkin_date:
+            try:
+                last_date = date.fromisoformat(profile.last_checkin_date)
+            except ValueError:
+                last_date = None
+        else:
+            last_date = None
+
+        if last_date and last_date < today - timedelta(days=1) and profile.checkin_streak != 0:
+            profile = await self.update_profile(record.id, checkin_streak=0)
+
+        is_member_one = user_id == record.member_one_id
+        column = "member_one_checked" if is_member_one else "member_two_checked"
+
+        row = await self._db.fetchone(
+            "SELECT * FROM couple_checkins WHERE couple_id = ? AND checkin_date = ?",
+            record.id,
+            today_str,
+        )
+
+        if row is None:
+            member_one_checked = 1 if is_member_one else 0
+            member_two_checked = 1 if not is_member_one else 0
+            await self._db.execute(
+                """
+                INSERT INTO couple_checkins (couple_id, checkin_date, member_one_checked, member_two_checked)
+                VALUES (?, ?, ?, ?)
+                """,
+                record.id,
+                today_str,
+                member_one_checked,
+                member_two_checked,
+            )
+            row = await self._db.fetchone("SELECT * FROM couple_checkins WHERE id = last_insert_rowid()")
+            assert row is not None
+            checkin = self._row_to_checkin(row)
+        else:
+            checkin = self._row_to_checkin(row)
+            already_checked = (checkin.member_one_checked and is_member_one) or (checkin.member_two_checked and not is_member_one)
+            if already_checked:
+                return CheckinResult("already", profile, checkin, False)
+            await self._db.execute(
+                f"""
+                UPDATE couple_checkins
+                SET {column} = 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                checkin.id,
+            )
+            row = await self._db.fetchone(
+                "SELECT * FROM couple_checkins WHERE id = ?",
+                checkin.id,
+            )
+            assert row is not None
+            checkin = self._row_to_checkin(row)
+
+        if checkin.member_one_checked and checkin.member_two_checked:
+            new_streak = 1
+            if last_date == today:
+                new_streak = profile.checkin_streak or 1
+            elif last_date == today - timedelta(days=1):
+                new_streak = profile.checkin_streak + 1 if profile.checkin_streak else 1
+            else:
+                new_streak = 1
+
+            profile = await self.update_profile(
+                record.id,
+                checkin_streak=new_streak,
+                last_checkin_date=today_str,
+            )
+            return CheckinResult("completed", profile, checkin, True)
+
+        return CheckinResult("awaiting_partner", profile, checkin, False)
 
     async def create_proposal(
         self,

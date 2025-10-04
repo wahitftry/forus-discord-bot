@@ -118,6 +118,8 @@ class ForUS(commands.Bot):
             guild = discord.Object(id=guild_id)
             try:
                 self.tree.clear_commands(guild=guild)
+                self.tree.copy_global_to(guild=guild)
+                self.tree.clear_commands(guild=guild)
                 await self.tree.sync(guild=guild)
                 self.log.info("Sinkronisasi perintah untuk guild %s", guild_id)
             except Exception:  # noqa: BLE001
