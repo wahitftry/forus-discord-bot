@@ -81,12 +81,35 @@ class GuildStatistics:
     boost_level: int
 
 
+def _parse_timezone_string(value: str, *, source: str | None = None) -> tzinfo:
+    candidate = value.strip()
+    alias_key = candidate.upper()
+    if alias_key in _TZ_ALIAS:
+        candidate = _TZ_ALIAS[alias_key]
+
+    try:
+        return ZoneInfo(candidate)
+    except ZoneInfoNotFoundError as exc:
+        match = _OFFSET_RE.fullmatch(candidate)
+        if not match:
+            label = source if source is not None else value
+            raise ValueError(f"Zona waktu '{label}' tidak dikenali.") from exc
+        sign = 1 if match.group(1) == "+" else -1
+        hours = int(match.group(2))
+        minutes = int(match.group(3) or 0)
+        if hours > 23 or minutes > 59:
+            label = source if source is not None else value
+            raise ValueError(f"Offset zona waktu '{label}' tidak valid.") from exc
+        delta = timedelta(hours=hours, minutes=minutes) * sign
+        return dt_timezone(delta)
+
+
 def _to_timezone(value: tzinfo | str | None) -> tzinfo:
     if value is None:
         raise ValueError("Zona waktu tidak boleh kosong.")
     if isinstance(value, tzinfo):
         return value
-    return ZoneInfo(str(value))
+    return _parse_timezone_string(str(value), source=str(value))
 
 
 def resolve_timezone(name: str | None, *, fallback: tzinfo | str | None = "UTC") -> tzinfo:
@@ -98,24 +121,8 @@ def resolve_timezone(name: str | None, *, fallback: tzinfo | str | None = "UTC")
     if not name or not str(name).strip():
         return _to_timezone(fallback)
 
-    candidate = str(name).strip()
-    alias_key = candidate.upper()
-    if alias_key in _TZ_ALIAS:
-        candidate = _TZ_ALIAS[alias_key]
-
-    try:
-        return ZoneInfo(candidate)
-    except ZoneInfoNotFoundError as exc:
-        match = _OFFSET_RE.fullmatch(candidate)
-        if not match:
-            raise ValueError(f"Zona waktu '{name}' tidak dikenali.") from exc
-        sign = 1 if match.group(1) == "+" else -1
-        hours = int(match.group(2))
-        minutes = int(match.group(3) or 0)
-        if hours > 23 or minutes > 59:
-            raise ValueError(f"Offset zona waktu '{name}' tidak valid.") from exc
-        delta = timedelta(hours=hours, minutes=minutes) * sign
-        return dt_timezone(delta)
+    candidate = str(name)
+    return _parse_timezone_string(candidate, source=candidate)
 
 
 def _try_parse_iso(value: str) -> datetime | None:
