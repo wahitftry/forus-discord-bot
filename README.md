@@ -10,7 +10,8 @@ Bot Discord multifungsi berbahasa Indonesia dengan perintah slash (/) berbasis `
 - 🎟️ **Sistem Tiket** `/ticket create|close|add|remove` membuat kanal privat.
 - 🎉 **Hiburan** `/meme`, `/quote`, `/joke`, `/dice`, `/8ball`, `/ship`.
 - 🤖 **Utilitas** `/ping`, `/help`, `/userinfo`, `/serverinfo`, `/botstats`, `/jadwalsholat`, `/carijadwalsholat`.
-- 👋 **Event Otomatis** sambutan, perpisahan, autorole, dan filter kata kasar + anti-spam sederhana.
+- �‍💻 **Developer Insight** `/developer ringkasan` dan `/developer profil` menghadirkan detail tim pengembang, jam support, dan kanal dukungan resmi.
+- �👋 **Event Otomatis** sambutan, perpisahan, autorole, dan filter kata kasar + anti-spam sederhana.
 - 💑 **Fitur Couple** `/couple propose|respond|status|affection|leaderboard|breakup` lengkap dengan pengaturan anniversary.
 
 ## Persiapan Lingkungan
@@ -49,7 +50,7 @@ bot/
   database/        # Lapisan database (core, migrasi, repository)
   services/        # Scheduler, logging, cache
   cogs/            # Kumpulan fitur slash command & listener
-  data/            # Data statis (kata terlarang)
+  data/            # Data statis (kata terlarang, profil developer)
 tests/             # Unit test database dasar
 ```
 
@@ -61,6 +62,15 @@ pytest
 ```
 
 Tes mencakup lapisan database, utilitas, dan fungsionalitas perintah seperti `/jadwalsholat` maupun `/carijadwalsholat` (dengan mock API). Perintah Discord lain diuji manual melalui staging server.
+
+## Info Developer
+
+Gunakan grup perintah `/developer` untuk mengenal tim pengembang dan kanal dukungan resmi.
+
+- `/developer ringkasan` — menampilkan ringkasan setiap kontributor inti beserta peran dan stack yang digunakan.
+- `/developer profil` — memberikan profil lengkap: peran, tanggung jawab, highlight fitur, pencapaian, jam respons, serta tautan kontak.
+
+Setiap informasi bersumber dari berkas statis `bot/data/developers.json` sehingga dapat diperbarui tanpa menyentuh kode. Data ini juga tampil pada perintah `/help` agar mudah ditemukan member server.
 
 ## Jadwal Sholat
 

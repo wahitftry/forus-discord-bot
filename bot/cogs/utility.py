@@ -58,6 +58,8 @@ class Utility(commands.Cog):
         embed.add_field(name="/userinfo", value="Informasi dasar pengguna.", inline=False)
         embed.add_field(name="/serverinfo", value="Ringkasan server.", inline=False)
         embed.add_field(name="/botstats", value="Statistik bot & uptime.", inline=False)
+        embed.add_field(name="/developer ringkasan", value="Profil singkat tim pengembang.", inline=False)
+        embed.add_field(name="/developer profil", value="Detail lengkap developer tertentu.", inline=False)
         embed.add_field(name="/jadwalsholat", value="Tampilkan jadwal sholat harian untuk Indonesia atau Malaysia.", inline=False)
         embed.add_field(name="/carijadwalsholat", value="Cari ID kota (Indonesia) atau kode JAKIM zona (Malaysia).", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
