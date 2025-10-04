@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from datetime import datetime, timezone
+from typing import Any, Optional, Sequence
 
 from .core import Database
 
@@ -278,3 +279,249 @@ class ShopRepository:
             item_name,
         )
         return None if row is None else dict(row)
+
+
+@dataclass(slots=True)
+class CoupleRecord:
+    id: int
+    guild_id: int
+    member_one_id: int
+    member_two_id: int
+    initiator_id: int
+    pending_target_id: int
+    status: str
+    proposal_message: Optional[str]
+    anniversary: Optional[str]
+    love_points: int
+    last_affection_one: Optional[str]
+    last_affection_two: Optional[str]
+    created_at: str
+    updated_at: str
+    ended_at: Optional[str]
+    ended_by: Optional[int]
+
+    def is_member(self, user_id: int) -> bool:
+        return user_id in (self.member_one_id, self.member_two_id)
+
+    def partner_id(self, user_id: int) -> Optional[int]:
+        if user_id == self.member_one_id:
+            return self.member_two_id
+        if user_id == self.member_two_id:
+            return self.member_one_id
+        return None
+
+    def last_affection_for(self, user_id: int) -> Optional[str]:
+        if user_id == self.member_one_id:
+            return self.last_affection_one
+        if user_id == self.member_two_id:
+            return self.last_affection_two
+        return None
+
+
+class CoupleRepository:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def _row_to_record(self, row: Any) -> CoupleRecord:
+        return CoupleRecord(
+            id=int(row["id"]),
+            guild_id=int(row["guild_id"]),
+            member_one_id=int(row["member_one_id"]),
+            member_two_id=int(row["member_two_id"]),
+            initiator_id=int(row["initiator_id"]),
+            pending_target_id=int(row["pending_target_id"]),
+            status=str(row["status"]),
+            proposal_message=row["proposal_message"],
+            anniversary=row["anniversary"],
+            love_points=int(row["love_points"]),
+            last_affection_one=row["last_affection_one"],
+            last_affection_two=row["last_affection_two"],
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+            ended_at=row["ended_at"],
+            ended_by=row["ended_by"],
+        )
+
+    async def get_by_id(self, couple_id: int) -> Optional[CoupleRecord]:
+        row = await self._db.fetchone("SELECT * FROM couples WHERE id = ?", couple_id)
+        return None if row is None else self._row_to_record(row)
+
+    async def get_pair(self, guild_id: int, user_id: int, partner_id: int) -> Optional[CoupleRecord]:
+        member_one_id, member_two_id = sorted((user_id, partner_id))
+        row = await self._db.fetchone(
+            """
+            SELECT * FROM couples
+            WHERE guild_id = ? AND member_one_id = ? AND member_two_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            guild_id,
+            member_one_id,
+            member_two_id,
+        )
+        return None if row is None else self._row_to_record(row)
+
+    async def get_relationship(self, guild_id: int, user_id: int, statuses: Sequence[str] | None = None) -> Optional[CoupleRecord]:
+        query = "SELECT * FROM couples WHERE guild_id = ? AND (member_one_id = ? OR member_two_id = ?)"
+        params: list[Any] = [guild_id, user_id, user_id]
+        if statuses:
+            placeholders = ", ".join("?" for _ in statuses)
+            query += f" AND status IN ({placeholders})"
+            params.extend(statuses)
+        query += " ORDER BY created_at DESC LIMIT 1"
+        row = await self._db.fetchone(query, *params)
+        return None if row is None else self._row_to_record(row)
+
+    async def create_proposal(
+        self,
+        guild_id: int,
+        initiator_id: int,
+        partner_id: int,
+        proposal_message: Optional[str],
+    ) -> CoupleRecord:
+        member_one_id, member_two_id = sorted((initiator_id, partner_id))
+        await self._db.execute(
+            """
+            INSERT INTO couples (
+                guild_id,
+                member_one_id,
+                member_two_id,
+                initiator_id,
+                pending_target_id,
+                status,
+                proposal_message,
+                love_points,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            guild_id,
+            member_one_id,
+            member_two_id,
+            initiator_id,
+            partner_id,
+            proposal_message,
+        )
+        row = await self._db.fetchone("SELECT * FROM couples WHERE id = last_insert_rowid()")
+        if row is None:
+            raise RuntimeError("Gagal membuat data pasangan baru")
+        return self._row_to_record(row)
+
+    async def accept_proposal(self, couple_id: int, anniversary: Optional[str] = None) -> Optional[CoupleRecord]:
+        if anniversary is None:
+            anniversary = datetime.now(timezone.utc).date().isoformat()
+        await self._db.execute(
+            """
+            UPDATE couples
+            SET status = 'active',
+                anniversary = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'pending'
+            """,
+            anniversary,
+            couple_id,
+        )
+        return await self.get_by_id(couple_id)
+
+    async def reject_proposal(self, couple_id: int, rejected_by: int) -> Optional[CoupleRecord]:
+        await self._db.execute(
+            """
+            UPDATE couples
+            SET status = 'rejected',
+                updated_at = CURRENT_TIMESTAMP,
+                ended_at = CURRENT_TIMESTAMP,
+                ended_by = ?
+            WHERE id = ? AND status = 'pending'
+            """,
+            rejected_by,
+            couple_id,
+        )
+        return await self.get_by_id(couple_id)
+
+    async def end_relationship(self, couple_id: int, ended_by: int) -> Optional[CoupleRecord]:
+        await self._db.execute(
+            """
+            UPDATE couples
+            SET status = 'ended',
+                updated_at = CURRENT_TIMESTAMP,
+                ended_at = CURRENT_TIMESTAMP,
+                ended_by = ?
+            WHERE id = ? AND status = 'active'
+            """,
+            ended_by,
+            couple_id,
+        )
+        return await self.get_by_id(couple_id)
+
+    async def update_anniversary(self, couple_id: int, anniversary: str) -> Optional[CoupleRecord]:
+        await self._db.execute(
+            """
+            UPDATE couples
+            SET anniversary = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'active'
+            """,
+            anniversary,
+            couple_id,
+        )
+        return await self.get_by_id(couple_id)
+
+    async def add_love_points(self, couple_id: int, amount: int) -> Optional[CoupleRecord]:
+        await self._db.execute(
+            """
+            UPDATE couples
+            SET love_points = love_points + ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'active'
+            """,
+            amount,
+            couple_id,
+        )
+        return await self.get_by_id(couple_id)
+
+    async def update_last_affection(self, record: CoupleRecord, user_id: int, timestamp: str) -> Optional[CoupleRecord]:
+        if not record.is_member(user_id):
+            raise ValueError("Pengguna bukan bagian dari pasangan ini")
+        column = "last_affection_one" if user_id == record.member_one_id else "last_affection_two"
+        await self._db.execute(
+            f"""
+            UPDATE couples
+            SET {column} = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            timestamp,
+            record.id,
+        )
+        return await self.get_by_id(record.id)
+
+    async def list_leaderboard(self, guild_id: int, limit: int = 10) -> list[CoupleRecord]:
+        rows = await self._db.fetchall(
+            """
+            SELECT * FROM couples
+            WHERE guild_id = ? AND status = 'active'
+            ORDER BY love_points DESC, created_at ASC
+            LIMIT ?
+            """,
+            guild_id,
+            limit,
+        )
+        return [self._row_to_record(row) for row in rows]
+
+    async def user_has_active_or_pending(self, guild_id: int, user_id: int) -> bool:
+        record = await self.get_relationship(guild_id, user_id, statuses=("pending", "active"))
+        return record is not None
+
+    async def get_pending_for_target(self, guild_id: int, user_id: int) -> Optional[CoupleRecord]:
+        row = await self._db.fetchone(
+            """
+            SELECT * FROM couples
+            WHERE guild_id = ? AND pending_target_id = ? AND status = 'pending'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            guild_id,
+            user_id,
+        )
+        return None if row is None else self._row_to_record(row)

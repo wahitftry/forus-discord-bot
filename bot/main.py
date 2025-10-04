@@ -9,7 +9,7 @@ from discord.ext import commands
 from .config import BotConfig, load_config
 from .database.core import Database
 from .database import migrations
-from .database.repositories import GuildSettingsRepository, EconomyRepository, ReminderRepository, WarnRepository, TicketRepository, ShopRepository
+from .database.repositories import GuildSettingsRepository, EconomyRepository, ReminderRepository, WarnRepository, TicketRepository, ShopRepository, CoupleRepository
 from .services.logging import setup_logging, get_logger
 from .services.scheduler import Scheduler
 
@@ -33,6 +33,7 @@ class ForUS(commands.Bot):
         self.warn_repo: WarnRepository | None = None
         self.ticket_repo: TicketRepository | None = None
         self.shop_repo: ShopRepository | None = None
+        self.couple_repo: CoupleRepository | None = None
         self.scheduler = Scheduler()
         self.log = get_logger("ForUS")
 
@@ -59,6 +60,7 @@ class ForUS(commands.Bot):
         self.warn_repo = WarnRepository(self.db)
         self.ticket_repo = TicketRepository(self.db)
         self.shop_repo = ShopRepository(self.db)
+        self.couple_repo = CoupleRepository(self.db)
 
     async def _load_cogs(self) -> None:
         for extension in (
@@ -67,6 +69,7 @@ class ForUS(commands.Bot):
             "bot.cogs.admin",
             "bot.cogs.economy",
             "bot.cogs.reminders",
+            "bot.cogs.couples",
             "bot.cogs.fun",
             "bot.cogs.tickets",
             "bot.cogs.events",
@@ -114,7 +117,6 @@ class ForUS(commands.Bot):
         for guild_id in guild_ids:
             guild = discord.Object(id=guild_id)
             try:
-                self.tree.copy_global_to(guild=guild)
                 self.tree.clear_commands(guild=guild)
                 await self.tree.sync(guild=guild)
                 self.log.info("Sinkronisasi perintah untuk guild %s", guild_id)

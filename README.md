@@ -11,6 +11,7 @@ Bot Discord multifungsi berbahasa Indonesia dengan perintah slash (/) berbasis `
 - 🎉 **Hiburan** `/meme`, `/quote`, `/joke`, `/dice`, `/8ball`, `/ship`.
 - 🤖 **Utilitas** `/ping`, `/help`, `/userinfo`, `/serverinfo`, `/botstats`, `/jadwalsholat`, `/carijadwalsholat`.
 - 👋 **Event Otomatis** sambutan, perpisahan, autorole, dan filter kata kasar + anti-spam sederhana.
+- 💑 **Fitur Couple** `/couple propose|respond|status|affection|leaderboard|breakup` lengkap dengan pengaturan anniversary.
 
 ## Persiapan Lingkungan
 1. Pastikan Python 3.11+ terpasang.
@@ -80,6 +81,20 @@ Untuk mencari ID kota atau kode JAKIM secara cepat, gunakan `/carijadwalsholat`:
 - **Batas:** tentukan jumlah hasil (default 10, maksimal 25).
 
 Bot menampilkan hasil dalam embed siap salin, dan kata kunci yang sama juga tersedia lewat auto-complete `/jadwalsholat`.
+
+## Fitur Couple
+
+Gunakan grup perintah `/couple` untuk membangun interaksi romantis di server:
+
+- `/couple propose` — ajukan pasangan dengan pesan manis opsional. Target akan dapat menjawab melalui `/couple respond`.
+- `/couple respond` — terima atau tolak lamaran yang masuk, lengkap dengan pesan balasan privat.
+- `/couple status` — lihat status hubungan, tanggal anniversary, dan statistik love points.
+- `/couple anniversary set` — atur tanggal spesial kalian dalam format `YYYY-MM-DD`.
+- `/couple affection` — klaim love points harian dan bonus sinkron dengan pasangan.
+- `/couple leaderboard` — tampilkan papan cinta berdasarkan love points tertinggi di guild.
+- `/couple breakup` — akhiri hubungan secara elegan dengan pemberitahuan privat.
+
+Semua data pasangan tersimpan pada database SQLite dan otomatis tersinkron saat bot online.
 
 ## Lisensi
 Proyek ini dirilis dengan lisensi MIT. Silakan modifikasi sesuai kebutuhan komunitas Anda.

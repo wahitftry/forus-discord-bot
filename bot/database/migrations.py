@@ -81,6 +81,42 @@ CREATE_TABLE_QUERIES: Sequence[str] = (
     );
     """,
     """
+    CREATE TABLE IF NOT EXISTS couples (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id INTEGER NOT NULL,
+        member_one_id INTEGER NOT NULL,
+        member_two_id INTEGER NOT NULL,
+        initiator_id INTEGER NOT NULL,
+        pending_target_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        proposal_message TEXT,
+        anniversary TEXT,
+        love_points INTEGER DEFAULT 0,
+        last_affection_one TEXT,
+        last_affection_two TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        ended_at TEXT,
+        ended_by INTEGER,
+        CHECK (member_one_id < member_two_id)
+    );
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_couples_member_one
+    ON couples (guild_id, member_one_id)
+    WHERE status IN ('pending', 'active');
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_couples_member_two
+    ON couples (guild_id, member_two_id)
+    WHERE status IN ('pending', 'active');
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_couples_pair_active
+    ON couples (guild_id, member_one_id, member_two_id)
+    WHERE status IN ('pending', 'active');
+    """,
+    """
     CREATE TABLE IF NOT EXISTS audit_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id INTEGER NOT NULL,
