@@ -113,15 +113,18 @@ class ForUS(commands.Bot):
     async def _sync_commands_for_guild(self, guild_id: int) -> None:
         guild = discord.Object(id=guild_id)
         try:
-            self.tree.copy_global_to(guild=guild)
             self.tree.clear_commands(guild=guild)
+            global_commands = self.tree.get_commands(guild=None)
+            if global_commands:
+                self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
             self.log.info("Sinkronisasi perintah untuk guild %s", guild_id)
         except Exception:  # noqa: BLE001
             self.log.exception("Gagal sinkronisasi command untuk guild %s", guild_id)
 
     async def _synchronize_guild_commands(self, guild_ids: list[int]) -> None:
-        for guild_id in guild_ids:
+        unique_ids = list(dict.fromkeys(guild_ids))
+        for guild_id in unique_ids:
             await self._sync_commands_for_guild(guild_id)
         try:
             self.tree.clear_commands(guild=None)
