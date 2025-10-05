@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import discord
 from discord.ext import commands
@@ -24,6 +27,7 @@ from .database.repositories import (
 )
 from .services.logging import setup_logging, get_logger
 from .services.scheduler import Scheduler
+from .services.presence import RichPresenceManager
 
 
 class ForUS(commands.Bot):
@@ -52,6 +56,8 @@ class ForUS(commands.Bot):
         self.announcement_repo: AnnouncementRepository | None = None
         self.scheduler = Scheduler()
         self.log = get_logger("ForUS")
+        self.started_at: datetime | None = None
+        self.presence_manager = RichPresenceManager(self, config.presence, version=config.bot_version)
 
     async def setup_hook(self) -> None:
         self.log.info("Memulai inisialisasi bot...")
@@ -59,13 +65,17 @@ class ForUS(commands.Bot):
         self.scheduler.start()
         await self._load_cogs()
         await self._synchronize_commands()
+        self.started_at = datetime.now(timezone.utc)
+        self.presence_manager.start()
+        self.presence_manager.request_refresh()
 
     async def close(self) -> None:
-        await super().close()
+        await self.presence_manager.close()
         if self.scheduler:
             self.scheduler.shutdown(wait=False)
         if self.db:
             await self.db.close()
+        await super().close()
 
     async def _setup_database(self) -> None:
         self.db = await Database.initialize(self.config.database_url)
@@ -118,7 +128,7 @@ class ForUS(commands.Bot):
             self.tree.clear_commands(guild=guild)
             global_commands = self.tree.get_commands(guild=None)
             #if global_commands:
-               # self.tree.copy_global_to(guild=guild)
+                #self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
             self.log.info("Sinkronisasi perintah untuk guild %s", guild_id)
         except Exception:  # noqa: BLE001
@@ -151,6 +161,31 @@ class ForUS(commands.Bot):
             self.log.info("Sinkronisasi perintah slash global selesai setelah pembersihan guild")
         except Exception:  # noqa: BLE001
             self.log.exception("Gagal sinkronisasi global perintah slash")
+
+    async def on_ready(self) -> None:  # type: ignore[override]
+        await self._invoke_parent_event("on_ready")
+        self.log.info("Bot siap sebagai %s (ID: %s)", self.user, getattr(self.user, "id", "?"))
+        self.presence_manager.request_refresh()
+
+    async def on_guild_join(self, guild: discord.Guild) -> None:  # type: ignore[override]
+        await self._invoke_parent_event("on_guild_join", guild)
+        self.presence_manager.request_refresh()
+
+    async def on_guild_remove(self, guild: discord.Guild) -> None:  # type: ignore[override]
+        await self._invoke_parent_event("on_guild_remove", guild)
+        self.presence_manager.request_refresh()
+
+    async def _invoke_parent_event(self, name: str, *args: Any) -> None:
+        parent = getattr(super(), name, None)
+        if not callable(parent):
+            return
+        try:
+            result = parent(*args)
+        except TypeError:
+            self.log.debug("Gagal memanggil event induk %s", name, exc_info=True)
+            return
+        if inspect.isawaitable(result):
+            await result
 
 
 async def main() -> None:

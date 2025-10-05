@@ -1,4 +1,4 @@
-# Nusantara Discord Bot
+# ForUS Discord Bot
 
 Bot Discord multifungsi berbahasa Indonesia dengan perintah slash (/) berbasis `discord.py` 2.x dan penyimpanan SQLite asinkron. Dirancang untuk kebutuhan komunitas: moderasi, konfigurasi server, ekonomi, pengingat, tiket dukungan, hingga hiburan ringan.
 

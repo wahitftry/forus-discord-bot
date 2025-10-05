@@ -1,0 +1,37 @@
+{
+  "enabled": true,
+  "rotation_seconds": 45,
+  "status": "online",
+  "activities": [
+    {
+      "type": "watching",
+      "text": "👁️ {guild_count} server • {member_count} anggota aktif"
+    },
+    {
+      "type": "listening",
+      "text": "🎧 /help • {commands_count} perintah terpasang"
+    },
+    {
+      "type": "playing",
+      "text": "🛠️ ForUS v{version} • uptime {uptime_human}",
+      "details": "Latency {latency_ms} ms",
+      "state": "Scheduler {scheduler_jobs} tugas"
+    },
+    {
+      "type": "competing",
+      "text": "⚔️ {scheduler_jobs} jadwal • {pending_reminders} pengingat",
+      "details": "DB {database_status}"
+    },
+    {
+      "type": "custom",
+      "text": "🚀 Dikelola {owner_count} developer • {database_status}",
+      "status": "idle",
+      "emoji": "🚀"
+    },
+    {
+      "type": "streaming",
+      "text": "🔴 Streaming on TikTok • shard {shard_count}",
+      "url": "https://www.tiktok.com/@dabelyu624"
+    }
+  ]
+}
