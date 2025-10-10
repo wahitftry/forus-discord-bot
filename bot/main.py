@@ -46,8 +46,9 @@ class ForUS(interactions.Client):
         }
         
         # Set debug_scope for guild-specific sync if guild_ids are configured
+        # Note: debug_scope only accepts a single guild ID for faster command sync during development
         if config.guild_ids:
-            init_params["debug_scope"] = config.guild_ids[0] if len(config.guild_ids) == 1 else config.guild_ids
+            init_params["debug_scope"] = config.guild_ids[0]
 
         super().__init__(**init_params)
         self.config = config
@@ -139,7 +140,11 @@ class ForUS(interactions.Client):
         # with sync_interactions=True in __init__
         if self.config.guild_ids:
             # Guild-specific sync for faster testing (via debug_scope)
-            self.log.info("🔄 Sinkronisasi perintah ke guild spesifik: %s", self.config.guild_ids)
+            # Note: debug_scope only syncs to the first guild for faster development
+            self.log.info("🔄 Sinkronisasi perintah ke guild: %s (debug_scope)", self.config.guild_ids[0])
+            if len(self.config.guild_ids) > 1:
+                self.log.warning("⚠️  Multiple guild IDs detected. Only using first guild (%s) for debug_scope", self.config.guild_ids[0])
+                self.log.info("💡 Untuk sync ke semua guild, kosongkan DISCORD_GUILD_IDS (akan sync global)")
             self.log.info("⚡ Mode debug_scope aktif - sync lebih cepat untuk testing")
         else:
             self.log.info("🌍 Sinkronisasi perintah global (butuh waktu ~1-5 menit)")

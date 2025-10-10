@@ -34,7 +34,7 @@ pip install -r requirements.txt
 | Nama               | Deskripsi                                                |
 |--------------------|----------------------------------------------------------|
 | `DISCORD_TOKEN`    | Token bot dari portal Discord Developer                  |
-| `DISCORD_GUILD_IDS`| Opsional. Daftar ID guild (dipisah koma) untuk sync cepat|
+| `DISCORD_GUILD_IDS`| Opsional. ID guild pertama untuk sync cepat (debug mode). Jika lebih dari satu ID, hanya yang pertama yang digunakan untuk debug_scope|
 | `DATABASE_URL`     | URL database (default `sqlite+aiosqlite:///./bot.db`)    |
 | `LOG_LEVEL`        | Level logging (`INFO`, `DEBUG`, dst)                     |
 | `OWNER_IDS`        | Opsional. Daftar ID owner (dipisah koma)                 |
@@ -44,7 +44,9 @@ pip install -r requirements.txt
 python -m bot.main
 ```
 
-Sinkronisasi perintah slash terjadi otomatis saat bot online. Jika `DISCORD_GUILD_IDS` diisi, sync hanya ke guild tersebut (lebih cepat). Tanpa itu, bot akan membersihkan perintah khusus guild yang tersisa dan hanya mendaftarkan ulang perintah global (butuh beberapa menit).
+Sinkronisasi perintah slash terjadi otomatis saat bot online:
+- **Dengan `DISCORD_GUILD_IDS`**: Sync ke guild pertama (debug_scope) untuk testing lebih cepat (~5-10 detik). Jika multiple guild IDs dikonfigurasi, hanya guild pertama yang digunakan.
+- **Tanpa `DISCORD_GUILD_IDS`**: Sync global ke semua server (butuh 1-5 menit). Bot akan cleanup perintah lama yang tidak digunakan.
 
 ## Struktur Proyek
 ```
