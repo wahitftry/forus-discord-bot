@@ -11,17 +11,13 @@ if TYPE_CHECKING:
     from bot.main import ForUS
 
 
-CATEGORY_CHOICES: list[app_commands.Choice[str]] = [
-    app_commands.Choice(name=label, value=key) for key, label in ACTIVITY_LOG_CATEGORIES.items()
+CATEGORY_CHOICES: list[interactions.SlashCommandChoice] = [
+    interactions.SlashCommandChoice(name=label, value=key) for key, label in ACTIVITY_LOG_CATEGORIES.items()
 ]
 
 
-@app_commands.default_permissions(administrator=True)
-class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola activity log server."):
-    guild_only = True
-
+class ActivityLog(interactions.Extension):
     def __init__(self, bot: ForUS) -> None:
-        super().__init__()
         self.bot = bot
         self.logger = ActivityLogger(bot)
 
@@ -30,20 +26,18 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
     ) -> Optional[tuple[interactions.Guild, "GuildSettingsRepository"]]:
         guild = ctx.guild
         if guild is None:
-            if not interaction.response.is_done():
-                await ctx.send(
-                    "Perintah ini hanya bisa digunakan di dalam server.",
-                    ephemeral=True,
-                )
+            await ctx.send(
+                "Perintah ini hanya bisa digunakan di dalam server.",
+                ephemeral=True,
+            )
             return None
 
         repo = self.bot.guild_repo
         if repo is None:
-            if not interaction.response.is_done():
-                await ctx.send(
-                    "Repositori guild belum siap. Silakan coba lagi nanti.",
-                    ephemeral=True,
-                )
+            await ctx.send(
+                "Repositori guild belum siap. Silakan coba lagi nanti.",
+                ephemeral=True,
+            )
             return None
 
         return guild, repo
@@ -62,7 +56,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
 
     @interactions.slash_command(name='status', description='Tampilkan konfigurasi activity log.')
     async def status(self, ctx: interactions.SlashContext) -> None:
-        context = await self._ensure_context(interaction)
+        context = await self._ensure_context(ctx)
         if context is None:
             return
         guild, _ = context
@@ -99,19 +93,30 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             embed.set_footer(text="Activity log saat ini dinonaktifkan.")
 
         await self._send_ephemeral(
-            interaction,
+            ctx,
             "Berikut status terbaru activity log:",
             embed=embed,
         )
 
-    @app_commands.command(name="set-channel", description="Setel channel tujuan activity log.")
-    @app_commands.describe(channel="Channel teks yang akan menerima activity log. Kosongkan untuk menghapus pengaturan.")
+    @interactions.slash_command(
+        name="activitylog",
+        description="Activity log commands",
+        sub_cmd_name="set_channel",
+        sub_cmd_description="Setel channel tujuan activity log.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
+    @interactions.slash_option(
+        name="channel",
+        description="Channel teks yang akan menerima activity log. Kosongkan untuk menghapus pengaturan.",
+        opt_type=interactions.OptionType.CHANNEL,
+        required=False,
+    )
     async def set_channel(
         self,
         ctx: interactions.SlashContext,
         channel: Optional[interactions.GuildText] = None,
     ) -> None:
-        context = await self._ensure_context(interaction)
+        context = await self._ensure_context(ctx)
         if context is None:
             return
         guild, repo = context
@@ -126,12 +131,23 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         else:
             message = f"Channel activity log diset ke {channel.mention}. Pastikan bot dapat mengirim pesan di sana."
 
-        await self._send_ephemeral(interaction, message)
+        await self._send_ephemeral(ctx, message)
 
-    @interactions.slash_command(name='toggle', description='Aktifkan atau nonaktifkan activity log.')
-    @app_commands.describe(status="Pilih 'True' untuk mengaktifkan atau 'False' untuk menonaktifkan.")
+    @interactions.slash_command(
+        name="activitylog",
+        description="Activity log commands",
+        sub_cmd_name="toggle",
+        sub_cmd_description="Aktifkan atau nonaktifkan activity log.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
+    @interactions.slash_option(
+        name="status",
+        description="Pilih 'True' untuk mengaktifkan atau 'False' untuk menonaktifkan.",
+        opt_type=interactions.OptionType.BOOLEAN,
+        required=True,
+    )
     async def toggle(self, ctx: interactions.SlashContext, status: bool) -> None:
-        context = await self._ensure_context(interaction)
+        context = await self._ensure_context(ctx)
         if context is None:
             return
         guild, repo = context
@@ -140,11 +156,17 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         await self.logger.invalidate_cache(guild.id)
 
         message = "Activity log berhasil diaktifkan." if status else "Activity log dinonaktifkan."
-        await self._send_ephemeral(interaction, message)
+        await self._send_ephemeral(ctx, message)
 
-    @interactions.slash_command(name='reset', description='Reset konfigurasi activity log ke nilai awal.')
+    @interactions.slash_command(
+        name="activitylog",
+        description="Activity log commands",
+        sub_cmd_name="reset",
+        sub_cmd_description="Reset konfigurasi activity log ke nilai awal.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
     async def reset(self, ctx: interactions.SlashContext) -> None:
-        context = await self._ensure_context(interaction)
+        context = await self._ensure_context(ctx)
         if context is None:
             return
         guild, repo = context
@@ -158,20 +180,37 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         await self.logger.invalidate_cache(guild.id)
 
         await self._send_ephemeral(
-            interaction,
+            ctx,
             "Konfigurasi activity log telah direset. Semua kategori aktif dan channel khusus dikosongkan.",
         )
 
-    @interactions.slash_command(name='category', description='Aktifkan atau nonaktifkan kategori tertentu.')
-    @app_commands.describe(category="Kategori log yang ingin diatur.", enabled="Aktifkan? Pilih False untuk menonaktifkan.")
-    @app_commands.choices(category=CATEGORY_CHOICES)
+    @interactions.slash_command(
+        name="activitylog",
+        description="Activity log commands",
+        sub_cmd_name="category",
+        sub_cmd_description="Aktifkan atau nonaktifkan kategori tertentu.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
+    @interactions.slash_option(
+        name="category",
+        description="Kategori log yang ingin diatur.",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+        choices=CATEGORY_CHOICES,
+    )
+    @interactions.slash_option(
+        name="enabled",
+        description="Aktifkan? Pilih False untuk menonaktifkan.",
+        opt_type=interactions.OptionType.BOOLEAN,
+        required=True,
+    )
     async def category(
         self,
         ctx: interactions.SlashContext,
-        category: app_commands.Choice[str],
+        category: str,
         enabled: bool,
     ) -> None:
-        context = await self._ensure_context(interaction)
+        context = await self._ensure_context(ctx)
         if context is None:
             return
         guild, repo = context
@@ -179,29 +218,29 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         disabled = set(settings.activity_log_disabled_events if settings else [])
 
         if enabled:
-            changed = category.value in disabled
-            disabled.discard(category.value)
+            changed = category in disabled
+            disabled.discard(category)
         else:
-            changed = category.value not in disabled
-            disabled.add(category.value)
+            changed = category not in disabled
+            disabled.add(category)
 
         await repo.upsert(guild.id, activity_log_disabled_events=sorted(disabled))
         await self.logger.invalidate_cache(guild.id)
 
         if enabled:
             message = (
-                f"Kategori `{category.value}` diaktifkan kembali untuk activity log."
+                f"Kategori `{category}` diaktifkan kembali untuk activity log."
                 if changed
-                else f"Kategori `{category.value}` sudah aktif."
+                else f"Kategori `{category}` sudah aktif."
             )
         else:
             message = (
-                f"Kategori `{category.value}` dinonaktifkan dan tidak akan dicatat."
+                f"Kategori `{category}` dinonaktifkan dan tidak akan dicatat."
                 if changed
-                else f"Kategori `{category.value}` sudah nonaktif."
+                else f"Kategori `{category}` sudah nonaktif."
             )
 
-        await self._send_ephemeral(interaction, message)
+        await self._send_ephemeral(ctx, message)
 
     async def _resolve_log_channel(
         self,
@@ -417,7 +456,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         log_channel, _ = await self._resolve_log_channel(ctx.guild)
         if log_channel is None:
             return
-        await self.logger.log_app_command(interaction, command, succeeded=True, channel=log_channel)
+        await self.logger.log_app_command(ctx, command, succeeded=True, channel=log_channel)
 
     @interactions.listen()
     async def on_app_command_error(
@@ -431,7 +470,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         if log_channel is None:
             return
         await self.logger.log_app_command(
-            interaction,
+            ctx,
             interaction.command if isinstance(interaction.command, app_commands.Command) else None,
             succeeded=False,
             error=error,

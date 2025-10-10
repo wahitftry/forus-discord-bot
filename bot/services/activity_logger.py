@@ -4,9 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, FrozenSet, Iterable, Optional, Sequence, TYPE_CHECKING, Protocol
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+import interactions
 
 from .cache import TTLCache
 from .logging import get_logger
@@ -52,7 +50,7 @@ class SupportsAttachmentDisplay(Protocol):
     url: Optional[str]
 
 
-def format_attachments(attachments: Sequence[discord.Attachment | SupportsAttachmentDisplay]) -> str | None:
+def format_attachments(attachments: Sequence[interactions.Attachment | SupportsAttachmentDisplay]) -> str | None:
     """Format daftar lampiran untuk ditampilkan dalam embed."""
 
     if not attachments:
@@ -76,7 +74,7 @@ def format_attachments(attachments: Sequence[discord.Attachment | SupportsAttach
     return "\n".join(lines)
 
 
-def format_user(user: Optional[discord.abc.User], *, fallback: str = "Unknown") -> str:
+def format_user(user: Optional[interactions.User], *, fallback: str = "Unknown") -> str:
     if user is None:
         return fallback
     mention = getattr(user, "mention", None)
@@ -112,7 +110,7 @@ class ActivityLogger:
     async def invalidate_cache(self, guild_id: int) -> None:
         await self._cache.invalidate(self._cache_key(guild_id))
 
-    async def _get_config(self, guild: discord.Guild) -> _ActivityLogConfig:
+    async def _get_config(self, guild: interactions.Guild) -> _ActivityLogConfig:
         cache_key = self._cache_key(guild.id)
         cached = await self._cache.get(cache_key)
         if isinstance(cached, _ActivityLogConfig):
@@ -134,35 +132,35 @@ class ActivityLogger:
         await self._cache.set(cache_key, config)
         return config
 
-    async def get_preferences(self, guild: discord.Guild) -> _ActivityLogConfig:
+    async def get_preferences(self, guild: interactions.Guild) -> _ActivityLogConfig:
         return await self._get_config(guild)
 
-    async def _resolve_channel(self, guild: discord.Guild, config: _ActivityLogConfig) -> Optional[discord.TextChannel]:
+    async def _resolve_channel(self, guild: interactions.Guild, config: _ActivityLogConfig) -> Optional[interactions.GuildText]:
         channel_id = config.channel_id
         if not channel_id:
             return None
 
         channel = guild.get_channel(channel_id)
-        if isinstance(channel, discord.TextChannel):
+        if isinstance(channel, interactions.GuildText):
             return channel
 
         try:
             fetched = await guild.fetch_channel(channel_id)
-        except discord.Forbidden:
+        except interactions.errors.Forbidden:
             self._internal_log.warning("Tidak dapat mengakses channel log %s di guild %s", channel_id, guild.id)
             await self.invalidate_cache(guild.id)
             return None
-        except discord.HTTPException:
+        except interactions.errors.HTTPException:
             await self.invalidate_cache(guild.id)
             return None
 
-        if isinstance(fetched, discord.TextChannel):
+        if isinstance(fetched, interactions.GuildText):
             return fetched
 
         await self.invalidate_cache(guild.id)
         return None
 
-    async def get_log_channel(self, guild: discord.Guild) -> Optional[discord.TextChannel]:
+    async def get_log_channel(self, guild: interactions.Guild) -> Optional[interactions.GuildText]:
         config = await self._get_config(guild)
         if not config.enabled:
             return None
@@ -170,11 +168,11 @@ class ActivityLogger:
 
     async def send_embed(
         self,
-        guild: discord.Guild,
-        embed: discord.Embed,
+        guild: interactions.Guild,
+        embed: interactions.Embed,
         *,
-        channel: Optional[discord.TextChannel] = None,
-        files: Optional[Sequence[discord.File]] = None,
+        channel: Optional[interactions.GuildText] = None,
+        files: Optional[Sequence[interactions.File]] = None,
         category: Optional[str] = None,
     ) -> bool:
         config = await self._get_config(guild)
@@ -188,23 +186,23 @@ class ActivityLogger:
             return False
         try:
             await target.send(embed=embed, files=files or [])
-        except (discord.Forbidden, discord.HTTPException) as exc:
+        except (interactions.errors.Forbidden, interactions.errors.HTTPException) as exc:
             self._internal_log.warning("Gagal mengirim log aktivitas: %s", exc)
             await self.invalidate_cache(guild.id)
             return False
         return True
 
     @staticmethod
-    def _base_embed(title: str, *, color: discord.Color, description: str | None = None) -> discord.Embed:
-        embed = discord.Embed(title=title, color=color, timestamp=datetime.now(timezone.utc))
+    def _base_embed(title: str, *, color: interactions.Color, description: str | None = None) -> interactions.Embed:
+        embed = interactions.Embed(title=title, color=color, timestamp=datetime.now(timezone.utc))
         if description:
             embed.description = truncate_content(description, limit=2048)
         return embed
 
-    async def log_message_sent(self, message: discord.Message, *, channel: Optional[discord.TextChannel] = None) -> bool:
+    async def log_message_sent(self, message: interactions.Message, *, channel: Optional[interactions.GuildText] = None) -> bool:
         if message.guild is None:
             return False
-        embed = self._base_embed("Pesan Baru", color=discord.Color.blurple())
+        embed = self._base_embed("Pesan Baru", color=interactions.Color.blurple())
         embed.add_field(name="Pengguna", value=format_user(message.author), inline=False)
         embed.add_field(name="Channel", value=message.channel.mention)
         if message.content:
@@ -217,16 +215,16 @@ class ActivityLogger:
 
     async def log_message_edit(
         self,
-        before: discord.Message,
-        after: discord.Message,
+        before: interactions.Message,
+        after: interactions.Message,
         *,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
         if after.guild is None:
             return False
         if before.content == after.content:
             return False
-        embed = self._base_embed("Pesan Diedit", color=discord.Color.gold())
+        embed = self._base_embed("Pesan Diedit", color=interactions.Color.gold())
         embed.add_field(name="Pengguna", value=format_user(after.author), inline=False)
         embed.add_field(name="Channel", value=after.channel.mention)
         if before.content:
@@ -238,14 +236,14 @@ class ActivityLogger:
 
     async def log_message_delete(
         self,
-        message: discord.Message,
+        message: interactions.Message,
         *,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
         guild = message.guild
         if guild is None:
             return False
-        embed = self._base_embed("Pesan Dihapus", color=discord.Color.dark_red())
+        embed = self._base_embed("Pesan Dihapus", color=interactions.Color.dark_red())
         author_field = format_user(getattr(message, "author", None), fallback="Tidak diketahui")
         embed.add_field(name="Pengguna", value=author_field, inline=False)
         embed.add_field(name="Channel", value=message.channel.mention)
@@ -260,40 +258,40 @@ class ActivityLogger:
 
     async def log_bulk_delete(
         self,
-        messages: Iterable[discord.Message],
-        guild: discord.Guild,
-        channel_deleted: discord.TextChannel,
+        messages: Iterable[interactions.Message],
+        guild: interactions.Guild,
+        channel_deleted: interactions.GuildText,
         *,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
         count = sum(1 for _ in messages)
-        embed = self._base_embed("Bulk Delete", color=discord.Color.dark_red(), description=f"{count} pesan dihapus.")
+        embed = self._base_embed("Bulk Delete", color=interactions.Color.dark_red(), description=f"{count} pesan dihapus.")
         embed.add_field(name="Channel", value=channel_deleted.mention)
         return await self.send_embed(guild, embed, channel=channel, category="messages")
 
-    async def log_member_join(self, member: discord.Member, *, channel: Optional[discord.TextChannel] = None) -> bool:
+    async def log_member_join(self, member: interactions.Member, *, channel: Optional[interactions.GuildText] = None) -> bool:
         guild = member.guild
-        embed = self._base_embed("Anggota Bergabung", color=discord.Color.green())
+        embed = self._base_embed("Anggota Bergabung", color=interactions.Color.green())
         embed.add_field(name="Pengguna", value=format_user(member), inline=False)
-        embed.add_field(name="Akun dibuat", value=discord.utils.format_dt(member.created_at, style="F"))
+        embed.add_field(name="Akun dibuat", value=interactions.Timestamp.fromdatetime(member.created_at).format(interactions.TimestampStyles.F))
         if member.bot:
             embed.add_field(name="Tipe", value="Bot")
         return await self.send_embed(guild, embed, channel=channel, category="members")
 
-    async def log_member_remove(self, member: discord.Member | discord.User, guild: discord.Guild, *, channel: Optional[discord.TextChannel] = None) -> bool:
-        embed = self._base_embed("Anggota Keluar", color=discord.Color.orange())
+    async def log_member_remove(self, member: interactions.Member | interactions.User, guild: interactions.Guild, *, channel: Optional[interactions.GuildText] = None) -> bool:
+        embed = self._base_embed("Anggota Keluar", color=interactions.Color.orange())
         embed.add_field(name="Pengguna", value=format_user(member), inline=False)
         joined_at = getattr(member, "joined_at", None)
         if joined_at:
-            embed.add_field(name="Bergabung", value=discord.utils.format_dt(joined_at, style="F"))
+            embed.add_field(name="Bergabung", value=interactions.Timestamp.fromdatetime(joined_at).format(interactions.TimestampStyles.F))
         return await self.send_embed(guild, embed, channel=channel, category="members")
 
     async def log_member_update(
         self,
-        before: discord.Member,
-        after: discord.Member,
+        before: interactions.Member,
+        after: interactions.Member,
         *,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
         changes: list[str] = []
         if before.nick != after.nick:
@@ -318,18 +316,18 @@ class ActivityLogger:
         if not changes:
             return False
 
-        embed = self._base_embed("Anggota Diperbarui", color=discord.Color.blue())
+        embed = self._base_embed("Anggota Diperbarui", color=interactions.Color.blue())
         embed.add_field(name="Pengguna", value=format_user(after), inline=False)
         embed.add_field(name="Perubahan", value="\n".join(changes), inline=False)
         return await self.send_embed(after.guild, embed, channel=channel, category="members")
 
     async def log_voice_state(
         self,
-        member: discord.Member,
-        before: discord.VoiceState,
-        after: discord.VoiceState,
+        member: interactions.Member,
+        before: interactions.VoiceState,
+        after: interactions.VoiceState,
         *,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
         guild = member.guild
         changes: list[str] = []
@@ -354,22 +352,22 @@ class ActivityLogger:
         if not changes:
             return False
 
-        embed = self._base_embed("Aktivitas Voice", color=discord.Color.purple())
+        embed = self._base_embed("Aktivitas Voice", color=interactions.Color.purple())
         embed.add_field(name="Pengguna", value=format_user(member), inline=False)
         embed.add_field(name="Perubahan", value="\n".join(changes), inline=False)
         return await self.send_embed(guild, embed, channel=channel, category="voice")
 
     async def log_channel_event(
         self,
-        guild: discord.Guild,
+        guild: interactions.Guild,
         *,
         action: str,
-        channel_obj: discord.abc.GuildChannel,
+        channel_obj: interactions.GuildChannel,
         old_name: str | None = None,
         new_name: str | None = None,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
-        embed = self._base_embed("Channel", color=discord.Color.teal())
+        embed = self._base_embed("Channel", color=interactions.Color.teal())
         embed.add_field(name="Aksi", value=action)
         embed.add_field(name="Channel", value=getattr(channel_obj, "mention", channel_obj.name))
         if old_name or new_name:
@@ -379,15 +377,15 @@ class ActivityLogger:
 
     async def log_role_event(
         self,
-        guild: discord.Guild,
+        guild: interactions.Guild,
         *,
         action: str,
-        role: discord.Role,
+        role: interactions.Role,
         old_name: str | None = None,
         new_name: str | None = None,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
-        embed = self._base_embed("Role", color=discord.Color.dark_teal())
+        embed = self._base_embed("Role", color=interactions.Color.dark_teal())
         embed.add_field(name="Aksi", value=action)
         embed.add_field(name="Role", value=role.mention)
         if old_name or new_name:
@@ -397,13 +395,13 @@ class ActivityLogger:
 
     async def log_thread_event(
         self,
-        thread: discord.Thread,
+        thread: interactions.ThreadChannel,
         *,
         action: str,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
         guild = thread.guild
-        embed = self._base_embed("Thread", color=discord.Color.blue())
+        embed = self._base_embed("Thread", color=interactions.Color.blue())
         embed.add_field(name="Aksi", value=action)
         embed.add_field(name="Thread", value=thread.mention)
         parent = thread.parent
@@ -414,18 +412,18 @@ class ActivityLogger:
 
     async def log_reaction(
         self,
-        reaction: discord.Reaction,
-        user: discord.User | discord.Member,
+        reaction: interactions.Reaction,
+        user: interactions.User | interactions.Member,
         *,
         added: bool,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
         message = reaction.message
         guild = message.guild
         if guild is None:
             return False
         action = "Reaksi Ditambahkan" if added else "Reaksi Dihapus"
-        embed = self._base_embed(action, color=discord.Color.dark_orange())
+        embed = self._base_embed(action, color=interactions.Color.dark_orange())
         embed.add_field(name="Pengguna", value=format_user(user), inline=False)
         embed.add_field(name="Channel", value=message.channel.mention)
         embed.add_field(name="Emote", value=str(reaction.emoji))
@@ -434,26 +432,26 @@ class ActivityLogger:
 
     async def log_app_command(
         self,
-        interaction: discord.Interaction,
-        command: Optional[app_commands.Command],
+        interaction: interactions.SlashContext,
+        command: Optional[interactions.SlashCommand] = None,
         *,
         succeeded: bool,
         error: Optional[BaseException] = None,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
         guild = interaction.guild
         if guild is None:
             return False
         title = "Slash Command" if succeeded else "Slash Command Error"
-        color = discord.Color.green() if succeeded else discord.Color.red()
+        color = interactions.Color.green() if succeeded else interactions.Color.red()
         embed = self._base_embed(title, color=color)
-        embed.add_field(name="Pengguna", value=format_user(interaction.user), inline=False)
+        embed.add_field(name="Pengguna", value=format_user(interaction.author), inline=False)
         if interaction.channel:
             embed.add_field(name="Channel", value=interaction.channel.mention)
         command_name = (
-            command.qualified_name
+            command.name
             if command is not None
-            else getattr(interaction.command, "qualified_name", "<unknown>")
+            else getattr(interaction.invoke_target, "name", "<unknown>")
         )
         embed.add_field(name="Perintah", value=command_name)
         if not succeeded and error:
@@ -462,25 +460,23 @@ class ActivityLogger:
 
     async def log_prefix_command(
         self,
-        ctx: commands.Context,
+        ctx: interactions.BaseContext,
         *,
         succeeded: bool,
         error: Optional[BaseException] = None,
-        channel: Optional[discord.TextChannel] = None,
+        channel: Optional[interactions.GuildText] = None,
     ) -> bool:
         guild = ctx.guild
         if guild is None:
             return False
         title = "Command" if succeeded else "Command Error"
-        color = discord.Color.dark_green() if succeeded else discord.Color.dark_red()
+        color = interactions.Color.dark_green() if succeeded else interactions.Color.dark_red()
         embed = self._base_embed(title, color=color)
         embed.add_field(name="Pengguna", value=format_user(ctx.author), inline=False)
         if ctx.channel:
             embed.add_field(name="Channel", value=ctx.channel.mention)
-        if ctx.command:
-            embed.add_field(name="Perintah", value=ctx.command.qualified_name)
-        if ctx.message:
-            embed.add_field(name="Isi", value=truncate_content(ctx.message.content), inline=False)
+        command_name = getattr(ctx.invoke_target, "name", "<unknown>") if hasattr(ctx, "invoke_target") else "<unknown>"
+        embed.add_field(name="Perintah", value=command_name)
         if not succeeded and error:
             embed.add_field(name="Error", value=truncate_content(str(error), limit=512), inline=False)
         return await self.send_embed(guild, embed, channel=channel, category="commands")
