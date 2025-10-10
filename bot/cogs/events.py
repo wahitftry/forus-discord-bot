@@ -135,7 +135,7 @@ class Events(interactions.Extension):
             embed = interactions.Embed(
                 title="Automod",
                 description=violation.reason,
-                color=interactions.Color.red(),
+                color=interactions.Color.from_hex("#ED4245"),
                 timestamp=datetime.now(timezone.utc),
             )
             embed.add_field(name="Pengguna", value=message.author.mention)
@@ -198,7 +198,7 @@ class Events(interactions.Extension):
         embed = interactions.Embed(
             title="Level Up!",
             description=f"{message.author.mention} mencapai level {progress.profile.level}!",
-            color=interactions.Color.orange(),
+            color=interactions.Color.from_hex("#E67E22"),
             timestamp=datetime.now(timezone.utc),
         )
         embed.add_field(

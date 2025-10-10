@@ -96,7 +96,7 @@ class Utility(interactions.Extension):
         embed = interactions.Embed(
             title="Panduan Perintah",
             description="Berikut beberapa perintah utama. Gunakan auto-complete di Discord untuk melihat semua perintah.",
-            color=interactions.Color.blurple(),
+            color=interactions.Color.from_hex("#5865F2"),  # Discord blurple
         )
         embed.add_field(name="/ping", value="Menampilkan latensi bot.", inline=False)
         embed.add_field(name="/userinfo", value="Informasi dasar pengguna.", inline=False)
@@ -149,7 +149,7 @@ class Utility(interactions.Extension):
                 f"Waktu sumber: {format_dt(local_dt, style='F')}\n"
                 f"Zona waktu: {format_timezone_display(source_tz)}"
             ),
-            color=interactions.Color.teal(),
+            color=interactions.Color.from_hex("#1ABC9C"),
         )
         embed.add_field(name="Unix", value=f"`{int(utc_dt.timestamp())}`", inline=False)
         for label, formatted in variants:
@@ -318,7 +318,7 @@ class Utility(interactions.Extension):
     @interactions.slash_command(name='userinfo', description='Menampilkan info pengguna.')
     async def userinfo(self, ctx: interactions.SlashContext, user: interactions.User | None = None) -> None:
         user = user or ctx.author
-        embed = interactions.Embed(title=f"Info {user.display_name}", color=interactions.Color.green())
+        embed = interactions.Embed(title=f"Info {user.display_name}", color=interactions.Color.from_hex("#2ECC71"))
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.add_field(name="ID", value=str(user.id))
         embed.add_field(name="Bot?", value="Ya" if user.bot else "Tidak")
@@ -389,7 +389,7 @@ class Utility(interactions.Extension):
             await ctx.send("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
             return
         stats = gather_guild_statistics(guild)
-        embed = interactions.Embed(title=guild.name, color=interactions.Color.gold())
+        embed = interactions.Embed(title=guild.name, color=interactions.Color.from_hex("#F1C40F"))
         if guild.description:
             embed.description = self._limit_text(guild.description, 350)
         if guild.icon:
@@ -491,15 +491,15 @@ class Utility(interactions.Extension):
             return
 
         if isinstance(target, interactions.GuildVoice):
-            color = interactions.Color.orange()
+            color = interactions.Color.from_hex("#E67E22")
         elif isinstance(target, interactions.GuildStageVoice):
             color = interactions.Color.dark_magenta()
         elif isinstance(target, interactions.GuildCategory):
             color = interactions.Color.dark_gray()
         elif isinstance(target, interactions.ThreadChannel):
-            color = interactions.Color.gold()
+            color = interactions.Color.from_hex("#F1C40F")
         else:
-            color = interactions.Color.blurple()
+            color = interactions.Color.from_hex("#5865F2")  # Discord blurple
 
         title = getattr(target, "name", str(target.id))
         embed = interactions.Embed(title=f"Channel #{title}", color=color)
@@ -599,7 +599,7 @@ class Utility(interactions.Extension):
         shard_count = getattr(self.bot, "shard_count", None) or 1
         cog_count = len(self.bot.cogs)
 
-        embed = interactions.Embed(title="Statistik Bot", color=interactions.Color.purple())
+        embed = interactions.Embed(title="Statistik Bot", color=interactions.Color.from_hex("#9B59B6"))
         embed.add_field(name="Versi Python", value=platform.python_version(), inline=True)
         embed.add_field(name="discord.py", value=discord.__version__, inline=True)
         embed.add_field(name="Shard", value=str(shard_count), inline=True)
@@ -934,7 +934,7 @@ class Utility(interactions.Extension):
         if daerah:
             deskripsi += f"\n{daerah.title() if isinstance(daerah, str) else daerah}"
 
-        embed = interactions.Embed(title=judul, description=deskripsi.strip(), color=interactions.Color.teal())
+        embed = interactions.Embed(title=judul, description=deskripsi.strip(), color=interactions.Color.from_hex("#1ABC9C"))
         for nama, key in [
             ("Imsak", "imsak"),
             ("Subuh", "subuh"),
@@ -978,7 +978,7 @@ class Utility(interactions.Extension):
         if daerah:
             deskripsi_lines.append(daerah)
         deskripsi = "\n".join(deskripsi_lines)
-        embed = interactions.Embed(title=judul, description=deskripsi, color=interactions.Color.green())
+        embed = interactions.Embed(title=judul, description=deskripsi, color=interactions.Color.from_hex("#2ECC71"))
 
         tz = MALAYSIA_TIMEZONE
 
