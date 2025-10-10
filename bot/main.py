@@ -36,13 +36,21 @@ class ForUS(interactions.Client):
         intents |= Intents.GUILD_MEMBERS
         intents |= Intents.MESSAGE_CONTENT
 
-        super().__init__(
-            intents=intents,
-            sync_interactions=True,
-            delete_unused_application_cmds=False,
-            send_command_tracebacks=True,
-            token=config.token,
-        )
+        # Prepare initialization parameters
+        init_params = {
+            "intents": intents,
+            "sync_interactions": True,
+            "delete_unused_application_cmds": True,
+            "send_command_tracebacks": True,
+            "token": config.token,
+        }
+        
+        # Set debug_scope for guild-specific sync if guild_ids are configured
+        # Note: debug_scope only accepts a single guild ID for faster command sync during development
+        if config.guild_ids:
+            init_params["debug_scope"] = config.guild_ids[0]
+
+        super().__init__(**init_params)
         self.config = config
         self.db: Database | None = None
         self.guild_repo: GuildSettingsRepository | None = None
@@ -95,7 +103,7 @@ class ForUS(interactions.Client):
         self.announcement_repo = AnnouncementRepository(self.db)
 
     async def _load_cogs(self) -> None:
-        for extension in (
+        extensions = (
             "bot.cogs.utility",
             "bot.cogs.developer",
             "bot.cogs.moderation",
@@ -111,22 +119,36 @@ class ForUS(interactions.Client):
             "bot.cogs.announcements",
             "bot.cogs.audit",
             "bot.cogs.activity_log",
-        ):
+        )
+        
+        loaded_count = 0
+        failed_count = 0
+        
+        for extension in extensions:
             try:
                 self.load_extension(extension)
-                self.log.info("Berhasil memuat extension %s", extension)
-            except Exception:  # noqa: BLE001
-                self.log.exception("Gagal memuat extension %s", extension)
+                self.log.info("✅ Berhasil memuat extension %s", extension)
+                loaded_count += 1
+            except Exception as e:
+                self.log.exception("❌ Gagal memuat extension %s: %s", extension, str(e))
+                failed_count += 1
+        
+        self.log.info("Selesai memuat cogs: %d berhasil, %d gagal", loaded_count, failed_count)
 
     async def _synchronize_commands(self) -> None:
         # interactions.py handles command syncing automatically
         # with sync_interactions=True in __init__
         if self.config.guild_ids:
-            # Set debug scope for guild-specific sync
-            for guild_id in self.config.guild_ids:
-                self.log.info("Akan sinkronisasi perintah ke guild %s", guild_id)
+            # Guild-specific sync for faster testing (via debug_scope)
+            # Note: debug_scope only syncs to the first guild for faster development
+            self.log.info("🔄 Sinkronisasi perintah ke guild: %s (debug_scope)", self.config.guild_ids[0])
+            if len(self.config.guild_ids) > 1:
+                self.log.warning("⚠️  Multiple guild IDs detected. Only using first guild (%s) for debug_scope", self.config.guild_ids[0])
+                self.log.info("💡 Untuk sync ke semua guild, kosongkan DISCORD_GUILD_IDS (akan sync global)")
+            self.log.info("⚡ Mode debug_scope aktif - sync lebih cepat untuk testing")
         else:
-            self.log.info("Akan sinkronisasi perintah global")
+            self.log.info("🌍 Sinkronisasi perintah global (butuh waktu ~1-5 menit)")
+            self.log.info("💡 Tips: Set DISCORD_GUILD_IDS untuk sync lebih cepat saat development")
 
     async def _sync_commands_for_guild(self, guild_id: int) -> None:
         # Not needed for interactions.py - handled automatically

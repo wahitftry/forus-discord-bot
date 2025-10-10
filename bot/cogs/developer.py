@@ -55,7 +55,7 @@ class Developer(interactions.Extension):
         embed = interactions.Embed(
             title=profile.display_name,
             description=profile.tagline,
-            color=interactions.Color.blurple(),
+            color=interactions.Color.from_hex("#5865F2"),  # Discord blurple
         )
         embed.add_field(name="Discord", value=profile.discord_handle, inline=True)
         embed.add_field(name="Zona Waktu", value=profile.timezone or "-", inline=True)
@@ -104,7 +104,7 @@ class Developer(interactions.Extension):
         embed = interactions.Embed(
             title="Tim Pengembang ForUS",
             description="Gambaran singkat setiap kontributor inti.",
-            color=interactions.Color.brand_green(),
+            color=interactions.Color.from_hex("#57F287"),
         )
         for profile in self.profiles:
             roles = ", ".join(profile.roles) if profile.roles else "-"

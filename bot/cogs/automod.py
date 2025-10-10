@@ -41,7 +41,7 @@ class AutoMod(interactions.Extension):
         if not rules:
             await ctx.send("Belum ada aturan automod yang dikonfigurasi.", ephemeral=True)
             return
-        embed = interactions.Embed(title="Status Automod", color=interactions.Color.orange())
+        embed = interactions.Embed(title="Status Automod", color=interactions.Color.from_hex("#E67E22"))
         for rule in rules:
             state = "Aktif" if rule.is_active else "Nonaktif"
             payload_lines = [f"**{key}**: {value}" for key, value in rule.payload.items()]

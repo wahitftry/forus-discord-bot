@@ -73,7 +73,7 @@ class ActivityLog(interactions.Extension):
 
         embed = interactions.Embed(
             title="Konfigurasi Activity Log",
-            color=interactions.Color.blurple(),
+            color=interactions.Color.from_hex("#5865F2"),  # Discord blurple
         )
         embed.add_field(name="Status", value="Aktif" if config.enabled else "Nonaktif", inline=False)
         embed.add_field(name="Channel", value=channel_value, inline=False)

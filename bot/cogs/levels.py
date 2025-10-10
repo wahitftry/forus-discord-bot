@@ -33,7 +33,7 @@ class Levels(interactions.Extension):
         profile = progress.profile
         embed = interactions.Embed(
             title=f"Level {target.display_name}",
-            color=interactions.Color.blurple(),
+            color=interactions.Color.from_hex("#5865F2"),  # Discord blurple
         )
         embed.add_field(name="Level", value=str(profile.level))
         embed.add_field(name="Total XP", value=str(profile.xp))
@@ -63,7 +63,7 @@ class Levels(interactions.Extension):
             member = ctx.guild.get_member(record.user_id)
             name = member.display_name if member else f"Pengguna {record.user_id}"
             lines.append(f"**{index}.** {name} — Level {record.level} ({record.xp} XP)")
-        embed = interactions.Embed(title="Papan Level", description="\n".join(lines), color=interactions.Color.green())
+        embed = interactions.Embed(title="Papan Level", description="\n".join(lines), color=interactions.Color.from_hex("#2ECC71"))
         await ctx.send(embed=embed)
 
     @interactions.slash_command(
@@ -171,7 +171,7 @@ class Levels(interactions.Extension):
             role = ctx.guild.get_role(reward.role_id)
             role_name = role.mention if role else f"Role {reward.role_id} (tidak ditemukan)"
             description.append(f"Level {reward.level} → {role_name}")
-        embed = interactions.Embed(title="Hadiah Level", description="\n".join(description), color=interactions.Color.gold())
+        embed = interactions.Embed(title="Hadiah Level", description="\n".join(description), color=interactions.Color.from_hex("#F1C40F"))
         await ctx.send(embed=embed, ephemeral=True)
 
 

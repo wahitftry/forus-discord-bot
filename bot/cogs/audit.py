@@ -86,7 +86,7 @@ class Audit(interactions.Extension):
             await ctx.send("Belum ada log audit yang tersimpan dengan filter tersebut.", ephemeral=True)
             return
 
-        embed = interactions.Embed(title="Log Audit Terbaru", color=interactions.Color.dark_gold())
+        embed = interactions.Embed(title="Log Audit Terbaru", color=interactions.Color.from_hex("#C27C0E"))
         if aksi:
             embed.description = f"Filter aksi: `{aksi.strip()}`"
 
@@ -176,7 +176,7 @@ class Audit(interactions.Extension):
         total_entries = sum(total for _, total in actions)
         actors = await repo.actor_summary(guild_id, limit=5, since=since_iso)
 
-        embed = interactions.Embed(title="Ringkasan Audit", color=interactions.Color.orange())
+        embed = interactions.Embed(title="Ringkasan Audit", color=interactions.Color.from_hex("#E67E22"))
         embed.description = (
             f"Periode sejak {discord.utils.format_dt(since_dt, style='F')} "
             f"({discord.utils.format_dt(since_dt, style='R')})"

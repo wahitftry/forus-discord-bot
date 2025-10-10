@@ -71,7 +71,7 @@ class Announcements(interactions.Extension):
             embed = interactions.Embed(
                 title=announcement.embed_title or None,
                 description=announcement.embed_description or None,
-                color=interactions.Color.brand_green(),
+                color=interactions.Color.from_hex("#57F287"),
             )
             if announcement.image_url:
                 embed.set_image(url=announcement.image_url)
@@ -222,7 +222,7 @@ class Announcements(interactions.Extension):
         if not scheduled:
             await ctx.send("Tidak ada pengumuman tertunda.", ephemeral=True)
             return
-        embed = interactions.Embed(title="Pengumuman Tertunda", color=interactions.Color.purple())
+        embed = interactions.Embed(title="Pengumuman Tertunda", color=interactions.Color.from_hex("#9B59B6"))
         for item in scheduled[:15]:
             waktu = datetime.fromisoformat(item.scheduled_at).astimezone(timezone.utc)
             embed.add_field(

@@ -188,11 +188,11 @@ def _normalize_hex_color(value: Optional[str]) -> Optional[str]:
 
 def _color_from_hex(value: Optional[str]) -> interactions.Color:
     if value is None:
-        return interactions.Color.blurple()
+        return interactions.Color.from_hex("#5865F2")  # Discord blurple
     try:
         return interactions.Color(int(value.lstrip("#"), 16))
     except ValueError:
-        return interactions.Color.blurple()
+        return interactions.Color.from_hex("#5865F2")  # Discord blurple
 
 
 class Couples(interactions.Extension):
@@ -408,7 +408,7 @@ class Couples(interactions.Extension):
         embed = interactions.Embed(
             title="💝 Lamaran Baru!",
             description=f"{ctx.author.mention} mengajak {pasangan.mention} menjadi pasangan!",
-            color=interactions.Color.magenta(),
+            color=interactions.Color.from_hex("#E91E63"),
         )
         if pesan:
             embed.add_field(name="Pesan", value=pesan, inline=False)
@@ -476,7 +476,7 @@ class Couples(interactions.Extension):
             embed = interactions.Embed(
                 title="💞 Selamat!",
                 description=f"{ctx.author.mention} menerima lamaran {initiator.mention if initiator else '<pasangan>'}!",
-                color=interactions.Color.magenta(),
+                color=interactions.Color.from_hex("#E91E63"),
             )
             embed.add_field(name="Tanggal Anniversary", value=ann_display, inline=True)
             embed.add_field(name="Love Points", value=str(updated.love_points), inline=True)
@@ -775,7 +775,7 @@ class Couples(interactions.Extension):
             await ctx.send("Album memori masih kosong.", ephemeral=True)
             return
 
-        embed = interactions.Embed(title="Memori Romantis", color=interactions.Color.gold())
+        embed = interactions.Embed(title="Memori Romantis", color=interactions.Color.from_hex("#F1C40F"))
         for mem in memories:
             value = mem.description or "(Tanpa deskripsi)"
             embed.add_field(name=f"#{mem.id} — {mem.title}", value=value[:1024], inline=False)
@@ -896,7 +896,7 @@ class Couples(interactions.Extension):
             crown = "👑 " if idx == 1 else ""
             lines.append(f"{crown}**{idx}.** {name_one} ❤️ {name_two} — {record.love_points} LP")
 
-        embed = interactions.Embed(title="Papan Cinta Server", description="\n".join(lines), color=interactions.Color.red())
+        embed = interactions.Embed(title="Papan Cinta Server", description="\n".join(lines), color=interactions.Color.from_hex("#ED4245"))
         await ctx.send(embed=embed)
 
     @interactions.slash_command(name='breakup', description='Akhiri hubungan dengan pasangan saat ini.')

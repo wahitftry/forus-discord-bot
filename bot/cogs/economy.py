@@ -162,7 +162,7 @@ class Economy(interactions.Extension):
             member = ctx.guild.get_member(user_id) or user_id
             name = member.mention if isinstance(member, interactions.Member) else f"<@{user_id}>"
             description.append(f"**{idx}.** {name} — {balance:,} koin")
-        embed = interactions.Embed(title="Papan Peringkat Ekonomi", description="\n".join(description), color=interactions.Color.teal())
+        embed = interactions.Embed(title="Papan Peringkat Ekonomi", description="\n".join(description), color=interactions.Color.from_hex("#1ABC9C"))
         await ctx.send(embed=embed)
 
     @interactions.slash_command(name='work', description='Kerja untuk mendapatkan penghasilan.')
@@ -220,7 +220,7 @@ class Economy(interactions.Extension):
         if not items:
             await ctx.send("Belum ada item di toko.")
             return
-        embed = interactions.Embed(title="Toko Server", color=interactions.Color.dark_gold())
+        embed = interactions.Embed(title="Toko Server", color=interactions.Color.from_hex("#C27C0E"))
         for item in items:
             reward = f" Role: <@&{item['role_reward_id']}>" if item.get("role_reward_id") else ""
             embed.add_field(

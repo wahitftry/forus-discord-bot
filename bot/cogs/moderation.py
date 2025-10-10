@@ -56,7 +56,7 @@ class Moderation(interactions.Extension):
         embed = interactions.Embed(
             title="Pengguna dikick",
             description=f"{member.mention} dikick oleh {ctx.author.mention}",
-            color=interactions.Color.orange(),
+            color=interactions.Color.from_hex("#E67E22"),
         )
         embed.add_field(name="Alasan", value=alasan or "Tidak ada")
         await ctx.send(embed=embed)
@@ -75,7 +75,7 @@ class Moderation(interactions.Extension):
         embed = interactions.Embed(
             title="Pengguna diban",
             description=f"{member.mention} diban oleh {ctx.author.mention}",
-            color=interactions.Color.red(),
+            color=interactions.Color.from_hex("#ED4245"),
         )
         embed.add_field(name="Alasan", value=alasan or "Tidak ada")
         await ctx.send(embed=embed)
@@ -95,7 +95,7 @@ class Moderation(interactions.Extension):
         embed = interactions.Embed(
             title="Pengguna diunban",
             description=f"{user.mention} diunban oleh {ctx.author.mention}",
-            color=interactions.Color.green(),
+            color=interactions.Color.from_hex("#2ECC71"),
         )
         embed.add_field(name="Alasan", value=alasan or "Tidak ada")
         await ctx.send(embed=embed)
@@ -139,7 +139,7 @@ class Moderation(interactions.Extension):
         embed = interactions.Embed(
             title="Peringatan diberikan",
             description=f"{member.mention} menerima peringatan dari {ctx.author.mention}",
-            color=interactions.Color.yellow(),
+            color=interactions.Color.from_hex("#FEE75C"),
         )
         embed.add_field(name="Alasan", value=alasan)
         await ctx.send(embed=embed)
@@ -158,7 +158,7 @@ class Moderation(interactions.Extension):
         if not warns:
             await ctx.send(f"{member.mention} belum memiliki peringatan.", ephemeral=True)
             return
-        embed = interactions.Embed(title=f"Daftar peringatan {member.display_name}", color=interactions.Color.orange())
+        embed = interactions.Embed(title=f"Daftar peringatan {member.display_name}", color=interactions.Color.from_hex("#E67E22"))
         for warn in warns[:10]:
             embed.add_field(
                 name=f"ID {warn['id']} oleh <@{warn['moderator_id']}>",
