@@ -423,7 +423,7 @@ class Couples(interactions.Extension):
             await pasangan.send(
                 f"{ctx.author.display_name} mengajakmu jadi pasangan di server {ctx.guild.name}! Gunakan /couple respond di server untuk menjawab."
             )
-        except discord.Forbidden:
+        except interactions.errors.Forbidden:
             pass
 
     
@@ -491,7 +491,7 @@ class Couples(interactions.Extension):
                     dm_message += f" Pesannya: {pesan}"
                 try:
                     await initiator.send(dm_message)
-                except discord.Forbidden:
+                except interactions.errors.Forbidden:
                     pass
         else:
             updated = await repo.reject_proposal(pending.id, ctx.author.id)
@@ -502,11 +502,16 @@ class Couples(interactions.Extension):
                     message += f" Pesannya: {pesan}"
                 try:
                     await initiator.send(message)
-                except discord.Forbidden:
+                except interactions.errors.Forbidden:
                     pass
 
-    @app_commands.describe(target="Cek status pasangan untuk pengguna tertentu (opsional)")
     @interactions.slash_command(name='status', description='Lihat status hubunganmu atau orang lain.')
+    @interactions.slash_option(
+        name="target",
+        description="Cek status pasangan untuk pengguna tertentu (opsional)",
+        opt_type=interactions.OptionType.USER,
+        required=False,
+    )
     async def status(self, ctx: interactions.SlashContext, target: Optional[interactions.User] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
@@ -524,9 +529,18 @@ class Couples(interactions.Extension):
         embed = await self._build_status_embed(interaction, user, record)
         await ctx.send(embed=embed, ephemeral=True)
 
-    anniversary = app_commands.Group(name="anniversary", description="Kelola tanggal anniversary pasangan")
-
-    @anniversary.command(name="set", description="Atur tanggal anniversary (format YYYY-MM-DD)")
+    @interactions.slash_command(
+        name="couple",
+        description="Couple commands",
+        sub_cmd_name="anniversary_set",
+        sub_cmd_description="Atur tanggal anniversary (format YYYY-MM-DD)",
+    )
+    @interactions.slash_option(
+        name="tanggal",
+        description="Tanggal anniversary (YYYY-MM-DD)",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
     async def anniversary_set(self, ctx: interactions.SlashContext, tanggal: str) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
@@ -557,9 +571,12 @@ class Couples(interactions.Extension):
             ephemeral=True,
         )
 
-    profile = app_commands.Group(name="profile", description="Atur profil cinta kalian")
-
-    @profile.command(name="view", description="Lihat profil romantis pasanganmu.")
+    @interactions.slash_command(
+        name="couple",
+        description="Couple commands",
+        sub_cmd_name="profile_view",
+        sub_cmd_description="Lihat profil romantis pasanganmu.",
+    )
     async def profile_view(self, ctx: interactions.SlashContext) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
@@ -572,13 +589,41 @@ class Couples(interactions.Extension):
         embed.title = "Profil Cinta"
         await ctx.send(embed=embed, ephemeral=True)
 
-    @profile.command(name="edit", description="Perbarui profil cinta kalian.")
-    @app_commands.describe(
-        title="Julukan romantis kalian",
-        theme_color="Warna tema (hex, contoh #FF66AA)",
-        love_song="Lagu favorit berdua",
-        bio="Deskripsi singkat hubungan (maks 500 karakter)",
-        mood="Mood hari ini",
+    @interactions.slash_command(
+        name="couple",
+        description="Couple commands",
+        sub_cmd_name="profile_edit",
+        sub_cmd_description="Perbarui profil cinta kalian.",
+    )
+    @interactions.slash_option(
+        name="title",
+        description="Julukan romantis kalian",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="theme_color",
+        description="Warna tema (hex, contoh #FF66AA)",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="love_song",
+        description="Lagu favorit berdua",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="bio",
+        description="Deskripsi singkat hubungan (maks 500 karakter)",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="mood",
+        description="Mood hari ini",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
     )
     async def profile_edit(
         self,
@@ -639,9 +684,24 @@ class Couples(interactions.Extension):
         embed.colour = _color_from_hex(profile.theme_color)
         await ctx.send(embed=embed, ephemeral=True)
 
-    memory = app_commands.Group(name="memory", description="Kelola jurnal memori kalian")
-
-    @memory.command(name="add", description="Tambahkan memori romantis ke jurnal.")
+    @interactions.slash_command(
+        name="couple",
+        description="Couple commands",
+        sub_cmd_name="memory_add",
+        sub_cmd_description="Tambahkan memori romantis ke jurnal.",
+    )
+    @interactions.slash_option(
+        name="judul",
+        description="Judul memori",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="cerita",
+        description="Cerita atau detail memori",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
     async def memory_add(self, ctx: interactions.SlashContext, judul: str, cerita: Optional[str] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
@@ -681,11 +741,24 @@ class Couples(interactions.Extension):
                     await partner.send(
                         f"{ctx.author.display_name} menambahkan memori baru: **{memory_entry.title}**\n{preview[:200]}"
                     )
-                except discord.Forbidden:
+                except interactions.errors.Forbidden:
                     pass
 
-    @memory.command(name="list", description="Tampilkan memori terbaru kalian.")
-    async def memory_list(self, ctx: interactions.SlashContext, jumlah: app_commands.Range[int, 1, 10] = 5) -> None:
+    @interactions.slash_command(
+        name="couple",
+        description="Couple commands",
+        sub_cmd_name="memory_list",
+        sub_cmd_description="Tampilkan memori terbaru kalian.",
+    )
+    @interactions.slash_option(
+        name="jumlah",
+        description="Jumlah memori yang ditampilkan (1-10)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=10,
+        required=False,
+    )
+    async def memory_list(self, ctx: interactions.SlashContext, jumlah: int = 5) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
@@ -708,7 +781,18 @@ class Couples(interactions.Extension):
             embed.add_field(name=f"#{mem.id} — {mem.title}", value=value[:1024], inline=False)
         await ctx.send(embed=embed, ephemeral=True)
 
-    @memory.command(name="delete", description="Hapus memori berdasarkan ID.")
+    @interactions.slash_command(
+        name="couple",
+        description="Couple commands",
+        sub_cmd_name="memory_delete",
+        sub_cmd_description="Hapus memori berdasarkan ID.",
+    )
+    @interactions.slash_option(
+        name="memori_id",
+        description="ID memori yang akan dihapus",
+        opt_type=interactions.OptionType.INTEGER,
+        required=True,
+    )
     async def memory_delete(self, ctx: interactions.SlashContext, memori_id: int) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
@@ -816,7 +900,12 @@ class Couples(interactions.Extension):
         await ctx.send(embed=embed)
 
     @interactions.slash_command(name='breakup', description='Akhiri hubungan dengan pasangan saat ini.')
-    @app_commands.describe(alasan="Alasan opsional untuk pasanganmu")
+    @interactions.slash_option(
+        name="alasan",
+        description="Alasan opsional untuk pasanganmu",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
     async def breakup(self, ctx: interactions.SlashContext, alasan: Optional[str] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
@@ -850,7 +939,7 @@ class Couples(interactions.Extension):
                 await partner.send(
                     f"{ctx.author.display_name} mengakhiri hubungan kalian di server {ctx.guild.name}.{reason}"
                 )
-            except discord.Forbidden:
+            except interactions.errors.Forbidden:
                 pass
 
 
