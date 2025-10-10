@@ -75,7 +75,13 @@ class Developer(interactions.Extension):
         return embed
 
     @interactions.slash_command(name='profil', description='Detail lengkap developer ForUS.')
-    @app_commands.describe(developer="ID developer. Kosongkan untuk melihat developer utama.")
+    @interactions.slash_option(
+        name="developer",
+        description="ID developer. Kosongkan untuk melihat developer utama.",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+        autocomplete=True,
+    )
     async def profile(self, ctx: interactions.SlashContext, developer: str | None = None) -> None:
         profile = self._get_profile(developer)
         if profile is None:
@@ -118,16 +124,16 @@ class Developer(interactions.Extension):
     @profile.autocomplete("developer")
     async def profile_autocomplete(
         self,
-        ctx: interactions.SlashContext,
-        current: str,
-    ) -> list[app_commands.Choice[str]]:
-        _ = interaction  # tidak digunakan
-        current_lower = current.lower().strip()
-        results: list[app_commands.Choice[str]] = []
+        ctx: interactions.AutocompleteContext,
+    ) -> None:
+        current = ctx.input_text.strip().lower()
+        results: list[interactions.SlashCommandChoice] = []
         for profile in self.profiles:
-            if not current_lower or current_lower in profile.display_name.lower() or current_lower in profile.id.lower():
-                results.append(app_commands.Choice(name=profile.display_name, value=profile.id))
-        return results[:25]
+            if not current or current in profile.display_name.lower() or current in profile.id.lower():
+                results.append(interactions.SlashCommandChoice(name=profile.display_name, value=profile.id))
+                if len(results) >= 25:
+                    break
+        await ctx.send(choices=results)
 
 
 def setup(bot: ForUS) -> None:

@@ -14,21 +14,50 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@app_commands.default_permissions(manage_guild=True)
 class ShopAdmin(interactions.Extension):
     # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:
         super().__init__()
         self.bot = bot
 
-    @interactions.slash_command(name='add', description='Tambah item ke shop')
+    @interactions.slash_command(
+        name='shopadmin',
+        description='Tambah item ke shop',
+        default_member_permissions=interactions.Permissions.MANAGE_GUILD,
+    )
+    @interactions.slash_option(
+        name="nama",
+        description="Nama item",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="harga",
+        description="Harga item (0-1000000)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=0,
+        max_value=1_000_000,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="deskripsi",
+        description="Deskripsi item",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="role_reward",
+        description="Role yang diberikan saat membeli",
+        opt_type=interactions.OptionType.ROLE,
+        required=False,
+    )
     async def add_item(
         self,
         ctx: interactions.SlashContext,
         nama: str,
-        harga: app_commands.Range[int, 0, 1_000_000],
+        harga: int,
         deskripsi: str,
-        role_reward: discord.Role | None = None,
+        role_reward: interactions.Role | None = None,
     ) -> None:
         if self.bot.shop_repo is None or ctx.guild is None:
             await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
@@ -42,15 +71,13 @@ class Economy(interactions.Extension):
         self.bot = bot
         self._shop_admin: ShopAdmin | None = None
 
-    async def cog_load(self) -> None:
-        self._shop_admin = ShopAdmin(self.bot)
-        await self.bot.add_cog(self._shop_admin)
-
-    def drop(self) -> None:
-        await self.bot.remove_cog("ShopAdmin")
-        self._shop_admin = None
-
     @interactions.slash_command(name='balance', description='Cek saldo ekonomi Anda')
+    @interactions.slash_option(
+        name="pengguna",
+        description="Pengguna yang ingin dicek saldonya (kosongkan untuk diri sendiri)",
+        opt_type=interactions.OptionType.USER,
+        required=False,
+    )
     async def balance(self, ctx: interactions.SlashContext, pengguna: interactions.User | None = None) -> None:
         if self.bot.economy_repo is None or ctx.guild is None:
             await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
@@ -84,11 +111,25 @@ class Economy(interactions.Extension):
         )
 
     @interactions.slash_command(name='transfer', description='Transfer saldo ke pengguna lain.')
+    @interactions.slash_option(
+        name="pengguna",
+        description="Pengguna tujuan",
+        opt_type=interactions.OptionType.USER,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="jumlah",
+        description="Jumlah yang ditransfer (1-1000000)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=1_000_000,
+        required=True,
+    )
     async def transfer(
         self,
         ctx: interactions.SlashContext,
         pengguna: interactions.User,
-        jumlah: app_commands.Range[int, 1, 1_000_000],
+        jumlah: int,
     ) -> None:
         if self.bot.economy_repo is None or ctx.guild is None:
             await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
@@ -139,7 +180,15 @@ class Economy(interactions.Extension):
         await ctx.send(f"{flavor} +{reward} koin. Saldo: {new_balance}.")
 
     @interactions.slash_command(name='gamble', description='Judikan koin Anda.')
-    async def gamble(self, ctx: interactions.SlashContext, jumlah: app_commands.Range[int, 10, 200_000]) -> None:
+    @interactions.slash_option(
+        name="jumlah",
+        description="Jumlah yang dijudikan (10-200000)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=10,
+        max_value=200_000,
+        required=True,
+    )
+    async def gamble(self, ctx: interactions.SlashContext, jumlah: int) -> None:
         if self.bot.economy_repo is None or ctx.guild is None:
             await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
@@ -157,9 +206,12 @@ class Economy(interactions.Extension):
             new_balance = await self.bot.economy_repo.update_balance(ctx.guild.id, ctx.author.id, loss)
             await ctx.send(f"Sayang sekali Anda kalah. Saldo kini {new_balance}.")
 
-    shop = app_commands.Group(name="shop", description="Perintah toko server")
-
-    @shop.command(name="list", description="Daftar item di toko.")
+    @interactions.slash_command(
+        name="shop",
+        description="Perintah toko server",
+        sub_cmd_name="list",
+        sub_cmd_description="Daftar item di toko.",
+    )
     async def shop_list(self, ctx: interactions.SlashContext) -> None:
         if self.bot.shop_repo is None or ctx.guild is None:
             await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
@@ -178,7 +230,18 @@ class Economy(interactions.Extension):
             )
         await ctx.send(embed=embed)
 
-    @shop.command(name="buy", description="Beli item dari toko.")
+    @interactions.slash_command(
+        name="shop",
+        description="Perintah toko server",
+        sub_cmd_name="buy",
+        sub_cmd_description="Beli item dari toko.",
+    )
+    @interactions.slash_option(
+        name="nama",
+        description="Nama item yang ingin dibeli",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
     async def shop_buy(self, ctx: interactions.SlashContext, nama: str) -> None:
         if any(repo is None for repo in (self.bot.shop_repo, self.bot.economy_repo)) or ctx.guild is None:
             await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)

@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 import interactions
 
 from bot.services.automod import AutomodEngine
-RULE_CHOICES: list[app_commands.Choice[str]] = [
-    app_commands.Choice(name="Filter Tautan", value="link_filter"),
-    app_commands.Choice(name="Batas Mention", value="mention_limit"),
-    app_commands.Choice(name="Huruf Kapital", value="caps"),
+RULE_CHOICES: list[interactions.SlashCommandChoice] = [
+    interactions.SlashCommandChoice(name="Filter Tautan", value="link_filter"),
+    interactions.SlashCommandChoice(name="Batas Mention", value="mention_limit"),
+    interactions.SlashCommandChoice(name="Huruf Kapital", value="caps"),
 ]
 
 
@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from bot.main import ForUS
 
 
-@app_commands.default_permissions(manage_guild=True)
 class AutoMod(interactions.Extension):
     # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:
@@ -51,30 +50,44 @@ class AutoMod(interactions.Extension):
         await ctx.send(embed=embed, ephemeral=True)
 
     @interactions.slash_command(name='disable', description='Nonaktifkan aturan automod tertentu.')
-    @app_commands.choices(rule_type=RULE_CHOICES)
-    async def disable(self, ctx: interactions.SlashContext, rule_type: app_commands.Choice[str]) -> None:
+    @interactions.slash_option(
+        name="rule_type",
+        description="Type of automod rule",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+        choices=RULE_CHOICES,
+    )
+    async def disable(self, ctx: interactions.SlashContext, rule_type: str) -> None:
         if not await self._ensure_repo(interaction):
             return
         assert ctx.guild is not None
-        existing = await self.bot.automod_repo.get_rule(ctx.guild.id, rule_type.value)
+        existing = await self.bot.automod_repo.get_rule(ctx.guild.id, rule_type)
         if existing is None:
             await ctx.send("Aturan tersebut belum dikonfigurasi.", ephemeral=True)
             return
-        await self.bot.automod_repo.set_active(ctx.guild.id, rule_type.value, False)
+        await self.bot.automod_repo.set_active(ctx.guild.id, rule_type, False)
         await self.bot.audit_repo.add_entry(
             ctx.guild.id,
             action="automod.disable",
             actor_id=ctx.author.id,
             target_id=None,
-            context=rule_type.value,
+            context=rule_type,
         )
         self.bot.dispatch("automod_rules_updated", ctx.guild.id)
-        await ctx.send(f"Aturan `{rule_type.value}` dinonaktifkan.", ephemeral=True)
+        await ctx.send(f"Aturan `{rule_type}` dinonaktifkan.", ephemeral=True)
 
     @interactions.slash_command(name='link', description='Aktifkan atau atur filter tautan.')
-    @app_commands.describe(
-        aktif="Apakah filter tautan aktif",
-        allow_domains="Daftar domain yang diizinkan (pisahkan dengan koma)",
+    @interactions.slash_option(
+        name="aktif",
+        description="Apakah filter tautan aktif",
+        opt_type=interactions.OptionType.BOOLEAN,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="allow_domains",
+        description="Daftar domain yang diizinkan (pisahkan dengan koma)",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
     )
     async def link(
         self,
@@ -104,7 +117,7 @@ class AutoMod(interactions.Extension):
     async def mentionlimit(
         self,
         ctx: interactions.SlashContext,
-        maksimum: app_commands.Range[int, 1, 20],
+        maksimum: int,
     ) -> None:
         if not await self._ensure_repo(interaction):
             return
@@ -124,15 +137,27 @@ class AutoMod(interactions.Extension):
         )
 
     @interactions.slash_command(name='caps', description='Deteksi pesan yang terlalu banyak huruf kapital.')
-    @app_commands.describe(
-        threshold="Rasio huruf kapital (0.1-1.0)",
-        min_length="Panjang minimal pesan untuk dicek",
+    @interactions.slash_option(
+        name="threshold",
+        description="Rasio huruf kapital (0.1-1.0)",
+        opt_type=interactions.OptionType.NUMBER,
+        min_value=0.1,
+        max_value=1.0,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="min_length",
+        description="Panjang minimal pesan untuk dicek",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=5,
+        max_value=200,
+        required=False,
     )
     async def caps(
         self,
         ctx: interactions.SlashContext,
-        threshold: app_commands.Range[float, 0.1, 1.0],
-        min_length: app_commands.Range[int, 5, 200] = 15,
+        threshold: float,
+        min_length: int = 15,
     ) -> None:
         if not await self._ensure_repo(interaction):
             return
