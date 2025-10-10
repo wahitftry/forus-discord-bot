@@ -94,16 +94,59 @@ class Announcements(interactions.Extension):
             await self.bot.announcement_repo.cancel(announcement_id)
 
     @interactions.slash_command(name='schedule', description='Jadwalkan pengumuman otomatis.')
-    @app_commands.describe(
-        channel="Channel tujuan",
-        tanggal="Tanggal (YYYY-MM-DD)",
-        jam="Jam (HH:MM 24 jam)",
-        zona_waktu="Zona waktu (misal Asia/Jakarta)",
-        judul="Judul embed opsional",
-        pesan="Isi pesan tambahan yang dikirim sebagai teks",
-        deskripsi_embed="Isi embed opsional",
-        mention_role="Role yang akan disebut",
-        image_url="URL gambar opsional",
+    @interactions.slash_option(
+        name="channel",
+        description="Channel tujuan",
+        opt_type=interactions.OptionType.CHANNEL,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="tanggal",
+        description="Tanggal (YYYY-MM-DD)",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="jam",
+        description="Jam (HH:MM 24 jam)",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="zona_waktu",
+        description="Zona waktu (misal Asia/Jakarta)",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="judul",
+        description="Judul embed opsional",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="pesan",
+        description="Isi pesan tambahan yang dikirim sebagai teks",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="deskripsi_embed",
+        description="Isi embed opsional",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="mention_role",
+        description="Role yang akan disebut",
+        opt_type=interactions.OptionType.ROLE,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="image_url",
+        description="URL gambar opsional",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
     )
     async def schedule(
         self,
@@ -112,7 +155,7 @@ class Announcements(interactions.Extension):
         tanggal: str,
         jam: str,
         zona_waktu: str | None = None,
-    judul: str | None = None,
+        judul: str | None = None,
     pesan: str | None = None,
     deskripsi_embed: str | None = None,
         mention_role: discord.Role | None = None,

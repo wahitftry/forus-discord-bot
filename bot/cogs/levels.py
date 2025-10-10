@@ -66,15 +66,38 @@ class Levels(interactions.Extension):
         embed = interactions.Embed(title="Papan Level", description="\n".join(lines), color=interactions.Color.green())
         await ctx.send(embed=embed)
 
-    rewards = app_commands.Group(name="rewards", description="Kelola hadiah level")
-
-    @rewards.command(name="set", description="Tetapkan role hadiah untuk level tertentu.")
-    @app_commands.checks.has_permissions(manage_roles=True)
+    @interactions.slash_command(
+        name="level",
+        description="Level commands",
+        sub_cmd_name="rewards_set",
+        sub_cmd_description="Tetapkan role hadiah untuk level tertentu.",
+        default_member_permissions=interactions.Permissions.MANAGE_ROLES,
+    )
+    @interactions.slash_option(
+        name="level",
+        description="Level untuk hadiah (1-200)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=200,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="role",
+        description="Role yang diberikan",
+        opt_type=interactions.OptionType.ROLE,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="sinkronisasi",
+        description="Berikan role ke member yang sudah mencapai level",
+        opt_type=interactions.OptionType.BOOLEAN,
+        required=False,
+    )
     async def rewards_set(
         self,
         ctx: interactions.SlashContext,
-        level: app_commands.Range[int, 1, 200],
-        role: discord.Role,
+        level: int,
+        role: interactions.Role,
         sinkronisasi: bool = False,
     ) -> None:
         if not await self._ensure_repo(interaction):
@@ -90,7 +113,7 @@ class Levels(interactions.Extension):
                     try:
                         await member.add_roles(role, reason="Sinkronisasi hadiah level")
                         applied += 1
-                    except discord.Forbidden:
+                    except interactions.errors.Forbidden:
                         continue
         else:
             applied = 0
@@ -99,12 +122,25 @@ class Levels(interactions.Extension):
             ephemeral=True,
         )
 
-    @rewards.command(name="remove", description="Hapus hadiah level yang ada.")
-    @app_commands.checks.has_permissions(manage_roles=True)
+    @interactions.slash_command(
+        name="level",
+        description="Level commands",
+        sub_cmd_name="rewards_remove",
+        sub_cmd_description="Hapus hadiah level yang ada.",
+        default_member_permissions=interactions.Permissions.MANAGE_ROLES,
+    )
+    @interactions.slash_option(
+        name="level",
+        description="Level untuk dihapus hadiahnya (1-200)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=200,
+        required=True,
+    )
     async def rewards_remove(
         self,
         ctx: interactions.SlashContext,
-        level: app_commands.Range[int, 1, 200],
+        level: int,
     ) -> None:
         if not await self._ensure_repo(interaction):
             return
@@ -115,8 +151,13 @@ class Levels(interactions.Extension):
             return
         await ctx.send("Hadiah level dihapus.", ephemeral=True)
 
-    @rewards.command(name="list", description="Daftar role hadiah level yang terkonfigurasi.")
-    @app_commands.checks.has_permissions(manage_roles=True)
+    @interactions.slash_command(
+        name="level",
+        description="Level commands",
+        sub_cmd_name="rewards_list",
+        sub_cmd_description="Daftar role hadiah level yang terkonfigurasi.",
+        default_member_permissions=interactions.Permissions.MANAGE_ROLES,
+    )
     async def rewards_list(self, ctx: interactions.SlashContext) -> None:
         if not await self._ensure_repo(interaction):
             return

@@ -55,14 +55,26 @@ class Audit(interactions.Extension):
         return guild.id, repo
 
     @interactions.slash_command(name='recent', description='Tampilkan catatan audit internal terbaru.')
-    @app_commands.describe(
-        jumlah="Jumlah catatan terbaru yang diambil (1-20)",
-        aksi="Filter prefix aksi. Kosongkan untuk menampilkan semua.",
+    @interactions.slash_option(
+        name="jumlah",
+        description="Jumlah catatan terbaru yang diambil (1-20)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=20,
+        required=False,
+        autocomplete=True,
+    )
+    @interactions.slash_option(
+        name="aksi",
+        description="Filter prefix aksi. Kosongkan untuk menampilkan semua.",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+        autocomplete=True,
     )
     async def recent(
         self,
         ctx: interactions.SlashContext,
-        jumlah: app_commands.Range[int, 1, 20] = 10,
+        jumlah: int = 10,
         aksi: str | None = None,
     ) -> None:
         guild_id, repo = await self._ensure_repo(interaction)
@@ -115,24 +127,36 @@ class Audit(interactions.Extension):
         if guild is None or repo is None:
             return []
         summary = await repo.action_summary(guild.id, limit=10)
-        normalized = current.strip().lower()
-        choices: list[app_commands.Choice[str]] = []
+        normalized = ctx.input_text.strip().lower()
+        choices: list[interactions.SlashCommandChoice] = []
         for action, _ in summary:
             if normalized and normalized not in action.lower():
                 continue
-            choices.append(app_commands.Choice(name=action, value=action))
-        return choices[:25]
+            choices.append(interactions.SlashCommandChoice(name=action, value=action))
+        await ctx.send(choices=choices[:25])
 
     @interactions.slash_command(name='stats', description='Ringkasan frekuensi aksi audit dalam periode tertentu.')
-    @app_commands.describe(
-        hari="Jumlah hari terakhir yang dihitung (1-30)",
-        batas="Jumlah aksi teratas yang ditampilkan (1-15)",
+    @interactions.slash_option(
+        name="hari",
+        description="Jumlah hari terakhir yang dihitung (1-30)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=30,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="batas",
+        description="Jumlah aksi teratas yang ditampilkan (1-15)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=15,
+        required=False,
     )
     async def stats(
         self,
         ctx: interactions.SlashContext,
-        hari: app_commands.Range[int, 1, 30] = 7,
-        batas: app_commands.Range[int, 1, 15] = 10,
+        hari: int = 7,
+        batas: int = 10,
     ) -> None:
         guild_id, repo = await self._ensure_repo(interaction)
         if repo is None or guild_id is None:
