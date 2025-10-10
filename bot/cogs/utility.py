@@ -31,6 +31,11 @@ INDONESIA_TIMEZONE = ZoneInfo("Asia/Jakarta")
 MALAYSIA_TIMEZONE = ZoneInfo("Asia/Kuala_Lumpur")
 
 
+def format_dt(dt: datetime, style: str = 'f') -> str:
+    """Format datetime as Discord timestamp."""
+    return interactions.Timestamp.fromdatetime(dt).format(interactions.TimestampStyles(style.upper()))
+
+
 class PrayerAPIError(RuntimeError):
     """Kesalahan umum ketika mengambil data jadwal sholat."""
 
@@ -44,7 +49,8 @@ class Utility(interactions.Extension):
         self.lookup_cache = TTLCache(ttl=LOOKUP_CACHE_TTL)
 
     def drop(self) -> None:
-        await self.session.close()
+        import asyncio
+        asyncio.create_task(self.session.close())
 
     async def _get_default_timezone(self, guild: interactions.Guild | None) -> str:
         if guild and self.bot.guild_repo is not None:
@@ -54,7 +60,7 @@ class Utility(interactions.Extension):
         return "Asia/Jakarta"
 
     @staticmethod
-    def _highlight_permissions(role: discord.Role) -> str:
+    def _highlight_permissions(role: interactions.Role) -> str:
         important = [
             ("administrator", "Administrator"),
             ("manage_guild", "Kelola Server"),
@@ -109,9 +115,17 @@ class Utility(interactions.Extension):
         await ctx.send(embed=embed, ephemeral=True)
 
     @interactions.slash_command(name='timestamp', description='Konversi waktu menjadi berbagai format timestamp Discord siap pakai.')
-    @app_commands.describe(
-        waktu="Waktu target (contoh: 2025-01-31 19:30)",
-        zona_waktu="Zona waktu asal. Kosongkan untuk mengikuti pengaturan server atau Asia/Jakarta.",
+    @interactions.slash_option(
+        name="waktu",
+        description="Waktu target (contoh: 2025-01-31 19:30)",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="zona_waktu",
+        description="Zona waktu asal. Kosongkan untuk mengikuti pengaturan server atau Asia/Jakarta.",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
     )
     async def timestamp(self, ctx: interactions.SlashContext, waktu: str, zona_waktu: str | None = None) -> None:
         default_tz_name = await self._get_default_timezone(ctx.guild)
@@ -132,7 +146,7 @@ class Utility(interactions.Extension):
         embed = interactions.Embed(
             title="Format Timestamp Discord",
             description=(
-                f"Waktu sumber: {discord.utils.format_dt(local_dt, style='F')}\n"
+                f"Waktu sumber: {format_dt(local_dt, style='F')}\n"
                 f"Zona waktu: {format_timezone_display(source_tz)}"
             ),
             color=interactions.Color.teal(),
@@ -142,17 +156,30 @@ class Utility(interactions.Extension):
             embed.add_field(name=label, value=formatted, inline=True)
         embed.add_field(
             name="UTC",
-            value=f"{discord.utils.format_dt(utc_dt, style='F')} (Relative {discord.utils.format_dt(utc_dt, style='R')})",
+            value=f"{format_dt(utc_dt, style='F')} (Relative {format_dt(utc_dt, style='R')})",
             inline=False,
         )
         embed.set_footer(text="Salin format yang sesuai dan tempelkan langsung ke chat Discord.")
         await ctx.send(embed=embed, ephemeral=True)
 
     @interactions.slash_command(name='timezone', description='Konversi waktu antar beberapa zona sekaligus.')
-    @app_commands.describe(
-        waktu="Waktu sumber (contoh: 2025-01-31 19:30)",
-        zona_asal="Zona waktu asal. Kosongkan untuk mengikuti pengaturan server atau Asia/Jakarta.",
-        zona_tujuan="Daftar zona tujuan dipisahkan koma (misal: UTC,Asia/Tokyo,America/New_York)",
+    @interactions.slash_option(
+        name="waktu",
+        description="Waktu sumber (contoh: 2025-01-31 19:30)",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="zona_asal",
+        description="Zona waktu asal. Kosongkan untuk mengikuti pengaturan server atau Asia/Jakarta.",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="zona_tujuan",
+        description="Daftar zona tujuan dipisahkan koma (misal: UTC,Asia/Tokyo,America/New_York)",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
     )
     async def timezone(
         self,
@@ -205,7 +232,7 @@ class Utility(interactions.Extension):
         embed = interactions.Embed(
             title="Konversi Zona Waktu",
             description=(
-                f"Sumber: {discord.utils.format_dt(origin_dt, style='F')}\n"
+                f"Sumber: {format_dt(origin_dt, style='F')}\n"
                 f"Zona asal: {format_timezone_display(origin_tz)}"
             ),
             color=interactions.Color.dark_teal(),
@@ -214,8 +241,8 @@ class Utility(interactions.Extension):
             embed.add_field(
                 name=label,
                 value=(
-                    f"{discord.utils.format_dt(dt_value, style='F')}\n"
-                    f"Relative: {discord.utils.format_dt(dt_value, style='R')}"
+                    f"{format_dt(dt_value, style='F')}\n"
+                    f"Relative: {format_dt(dt_value, style='R')}"
                 ),
                 inline=False,
             )
@@ -225,23 +252,36 @@ class Utility(interactions.Extension):
         await ctx.send(embed=embed, ephemeral=True)
 
     @interactions.slash_command(name='carijadwalsholat', description='Cari ID kota (Indonesia) atau kode JAKIM (Malaysia) untuk jadwal sholat.')
-    @app_commands.describe(
-        negara="Pilih negara sumber data",
-        keyword="Ketik nama kota/zona yang ingin dicari",
-        batas="Batas jumlah hasil (1-25)",
+    @interactions.slash_option(
+        name="negara",
+        description="Pilih negara sumber data",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+        choices=[
+            interactions.SlashCommandChoice(name="Indonesia", value="indonesia"),
+            interactions.SlashCommandChoice(name="Malaysia", value="malaysia"),
+        ],
     )
-    @app_commands.choices(
-        negara=[
-            app_commands.Choice(name="Indonesia", value="indonesia"),
-            app_commands.Choice(name="Malaysia", value="malaysia"),
-        ]
+    @interactions.slash_option(
+        name="keyword",
+        description="Ketik nama kota/zona yang ingin dicari",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="batas",
+        description="Batas jumlah hasil (1-25)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=25,
+        required=False,
     )
     async def carijadwalsholat(
         self,
         ctx: interactions.SlashContext,
-        negara: app_commands.Choice[str],
+        negara: str,
         keyword: str,
-        batas: app_commands.Range[int, 1, 25] = 10,
+        batas: int = 10,
     ) -> None:
         keyword = keyword.strip()
         if len(keyword) < 2:
@@ -254,7 +294,7 @@ class Utility(interactions.Extension):
         batas = int(batas)
 
         try:
-            if negara.value == "indonesia":
+            if negara == "indonesia":
                 results = await self._search_indonesia_locations(keyword)
                 limited = results[:batas]
                 embed = self._build_search_embed_indonesia(keyword, limited)
@@ -282,15 +322,21 @@ class Utility(interactions.Extension):
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.add_field(name="ID", value=str(user.id))
         embed.add_field(name="Bot?", value="Ya" if user.bot else "Tidak")
-        embed.add_field(name="Dibuat", value=discord.utils.format_dt(user.created_at, style="F"), inline=False)
+        embed.add_field(name="Dibuat", value=format_dt(user.created_at, style="F"), inline=False)
         if isinstance(user, interactions.Member):
-            embed.add_field(name="Bergabung", value=discord.utils.format_dt(user.joined_at, style="F"), inline=False)
+            embed.add_field(name="Bergabung", value=format_dt(user.joined_at, style="F"), inline=False)
             roles = ", ".join(role.mention for role in user.roles[1:]) or "Tidak ada"
             embed.add_field(name="Role", value=roles, inline=False)
         await ctx.send(embed=embed)
 
     @interactions.slash_command(name='roleinfo', description='Tampilkan detail lengkap sebuah role di server.')
-    async def roleinfo(self, ctx: interactions.SlashContext, role: discord.Role) -> None:
+    @interactions.slash_option(
+        name="role",
+        description="Role yang ingin dilihat informasinya",
+        opt_type=interactions.OptionType.ROLE,
+        required=True,
+    )
+    async def roleinfo(self, ctx: interactions.SlashContext, role: interactions.Role) -> None:
         if ctx.guild is None:
             await ctx.send("Perintah ini hanya dapat digunakan di dalam server.", ephemeral=True)
             return
@@ -303,7 +349,7 @@ class Utility(interactions.Extension):
         )
         embed.add_field(name="ID", value=str(role.id))
         embed.add_field(name="Posisi", value=str(role.position))
-        embed.add_field(name="Dibuat", value=discord.utils.format_dt(role.created_at, style="F"), inline=False)
+        embed.add_field(name="Dibuat", value=format_dt(role.created_at, style="F"), inline=False)
         color_hex = f"#{role.color.value:06X}" if role.color.value else "#000000"
         embed.add_field(name="Warna", value=color_hex, inline=True)
         embed.add_field(name="Dapat disebut", value="Ya" if role.mentionable else "Tidak", inline=True)
@@ -355,7 +401,7 @@ class Utility(interactions.Extension):
 
         embed.add_field(name="ID", value=str(guild.id), inline=True)
         embed.add_field(name="Owner", value=guild.owner.mention if guild.owner else "Tidak diketahui", inline=True)
-        embed.add_field(name="Dibuat", value=discord.utils.format_dt(guild.created_at, style="F"), inline=False)
+        embed.add_field(name="Dibuat", value=format_dt(guild.created_at, style="F"), inline=False)
 
         embed.add_field(
             name="Anggota",
@@ -424,28 +470,33 @@ class Utility(interactions.Extension):
         await ctx.send(embed=embed)
 
     @interactions.slash_command(name='channelinfo', description='Diagnostik lengkap sebuah channel. Kosongkan untuk channel saat ini.')
-    @app_commands.describe(channel="Channel yang ingin dianalisis. Kosongkan untuk menggunakan channel saat ini.")
+    @interactions.slash_option(
+        name="channel",
+        description="Channel yang ingin dianalisis. Kosongkan untuk menggunakan channel saat ini.",
+        opt_type=interactions.OptionType.CHANNEL,
+        required=False,
+    )
     async def channelinfo(
         self,
         ctx: interactions.SlashContext,
-        channel: discord.abc.GuildChannel | None = None,
+        channel: interactions.GuildChannel | None = None,
     ) -> None:
         if ctx.guild is None:
             await ctx.send("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
             return
 
         target = channel or ctx.channel
-        if not isinstance(target, discord.abc.GuildChannel):
+        if not isinstance(target, interactions.GuildChannel):
             await ctx.send("Tidak dapat membaca informasi channel ini.", ephemeral=True)
             return
 
-        if isinstance(target, discord.VoiceChannel):
+        if isinstance(target, interactions.GuildVoice):
             color = interactions.Color.orange()
-        elif isinstance(target, discord.StageChannel):
+        elif isinstance(target, interactions.GuildStageVoice):
             color = interactions.Color.dark_magenta()
-        elif isinstance(target, discord.CategoryChannel):
+        elif isinstance(target, interactions.GuildCategory):
             color = interactions.Color.dark_gray()
-        elif isinstance(target, discord.Thread):
+        elif isinstance(target, interactions.ThreadChannel):
             color = interactions.Color.gold()
         else:
             color = interactions.Color.blurple()
@@ -471,7 +522,7 @@ class Utility(interactions.Extension):
 
         created_at = getattr(target, "created_at", None)
         if isinstance(created_at, datetime):
-            embed.add_field(name="Dibuat", value=discord.utils.format_dt(created_at, style="F"), inline=False)
+            embed.add_field(name="Dibuat", value=format_dt(created_at, style="F"), inline=False)
 
         position = getattr(target, "position", None)
         if isinstance(position, int):
@@ -486,7 +537,7 @@ class Utility(interactions.Extension):
             embed.add_field(name="Slowmode", value=f"{slowmode} detik" if slowmode else "Tidak aktif", inline=True)
             topic = self._limit_text(target.topic, 512) or "Tidak ada"
             embed.add_field(name="Topik", value=topic, inline=False)
-        elif isinstance(target, discord.ForumChannel):
+        elif isinstance(target, interactions.GuildForum):
             slowmode = target.default_thread_slowmode_delay or 0
             embed.add_field(name="Slowmode thread", value=f"{slowmode} detik" if slowmode else "Tidak aktif", inline=True)
             auto_archive = target.default_auto_archive_duration or 0
@@ -495,19 +546,19 @@ class Utility(interactions.Extension):
             if tags:
                 tag_preview = ", ".join(tag.name for tag in tags[:10])
                 embed.add_field(name="Tag tersedia", value=self._limit_text(tag_preview, 512), inline=False)
-        elif isinstance(target, discord.VoiceChannel):
+        elif isinstance(target, interactions.GuildVoice):
             embed.add_field(name="Bitrate", value=f"{target.bitrate // 1000} kbps", inline=True)
             embed.add_field(name="Batas pengguna", value=str(target.user_limit) if target.user_limit else "Tidak ada", inline=True)
             embed.add_field(name="Region RTC", value=target.rtc_region or "Otomatis", inline=True)
-        elif isinstance(target, discord.StageChannel):
+        elif isinstance(target, interactions.GuildStageVoice):
             embed.add_field(name="Bitrate", value=f"{target.bitrate // 1000} kbps", inline=True)
             embed.add_field(name="Batas pembicara", value=str(target.user_limit) if target.user_limit else "Tidak ada", inline=True)
             if target.topic:
                 embed.add_field(name="Topik", value=self._limit_text(target.topic, 512), inline=False)
-        elif isinstance(target, discord.CategoryChannel):
+        elif isinstance(target, interactions.GuildCategory):
             child_count = len(target.channels)
             embed.add_field(name="Jumlah channel", value=str(child_count), inline=True)
-        elif isinstance(target, discord.Thread):
+        elif isinstance(target, interactions.ThreadChannel):
             owner = getattr(target, "owner", None)
             if owner:
                 owner_value = owner.mention
@@ -557,7 +608,7 @@ class Utility(interactions.Extension):
         embed.add_field(name="Total cog", value=str(cog_count), inline=True)
         embed.add_field(name="Perintah terdaftar", value=str(command_count), inline=True)
         embed.add_field(name="Tugas terjadwal", value=str(scheduler_jobs), inline=True)
-        embed.add_field(name="Uptime", value=f"{uptime_text} (Sejak {discord.utils.format_dt(started_at, style='R')})", inline=False)
+        embed.add_field(name="Uptime", value=f"{uptime_text} (Sejak {format_dt(started_at, style='R')})", inline=False)
 
         memory_mb = resource_stats.get("memory_mb")
         if memory_mb is not None:
