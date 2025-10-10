@@ -3,15 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+import interactions
 
 if TYPE_CHECKING:
     from bot.main import ForUS
 
 
-class Reminders(commands.GroupCog, name="reminder"):
+class Reminders(interactions.Extension):
+    # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:
         super().__init__()
         self.bot = bot
@@ -44,7 +43,7 @@ class Reminders(commands.GroupCog, name="reminder"):
             if not guild:
                 continue
             channel = guild.get_channel(reminder["channel_id"]) if reminder.get("channel_id") else None
-            if channel and isinstance(channel, discord.TextChannel):
+            if channel and isinstance(channel, interactions.GuildText):
                 await channel.send(f"<@{reminder['user_id']}> Pengingat: {reminder['message']}")
             else:
                 member = guild.get_member(reminder["user_id"])
@@ -55,42 +54,42 @@ class Reminders(commands.GroupCog, name="reminder"):
                         pass
             await self.bot.reminder_repo.delete(reminder_id)
 
-    @app_commands.command(name="create", description="Buat pengingat baru dengan durasi tertentu.")
+    @interactions.slash_command(name='create', description='Buat pengingat baru dengan durasi tertentu.')
     @app_commands.describe(durasi_menit="Durasi sebelum pengingat (1-10080 menit)", pesan="Pesan pengingat", channel="Channel tujuan (opsional)")
     async def create(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         durasi_menit: app_commands.Range[int, 1, 10_080],
         pesan: str,
-        channel: discord.TextChannel | None = None,
+        channel: interactions.GuildText | None = None,
     ) -> None:
-        if self.bot.reminder_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+        if self.bot.reminder_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
         remind_at = datetime.now(timezone.utc) + timedelta(minutes=durasi_menit)
         reminder_id = await self.bot.reminder_repo.create(
-            interaction.guild.id,
-            interaction.user.id,
+            ctx.guild.id,
+            ctx.author.id,
             pesan,
             remind_at.isoformat(),
-            channel.id if channel else interaction.channel_id,
+            channel.id if channel else ctx.channel_id,
         )
         await self._schedule_reminder(reminder_id, remind_at)
-        await interaction.response.send_message(
+        await ctx.send(
             f"Pengingat dibuat! ID: {reminder_id}. Saya akan mengingatkan pada {discord.utils.format_dt(remind_at)}.",
             ephemeral=True,
         )
 
-    @app_commands.command(name="list", description="Daftar pengingat Anda.")
-    async def list_reminders(self, interaction: discord.Interaction) -> None:
-        if self.bot.reminder_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(name='list', description='Daftar pengingat Anda.')
+    async def list_reminders(self, ctx: interactions.SlashContext) -> None:
+        if self.bot.reminder_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        reminders = await self.bot.reminder_repo.list_for_user(interaction.guild.id, interaction.user.id)
+        reminders = await self.bot.reminder_repo.list_for_user(ctx.guild.id, ctx.author.id)
         if not reminders:
-            await interaction.response.send_message("Anda belum memiliki pengingat aktif.", ephemeral=True)
+            await ctx.send("Anda belum memiliki pengingat aktif.", ephemeral=True)
             return
-        embed = discord.Embed(title="Pengingat aktif", color=discord.Color.blue())
+        embed = interactions.Embed(title="Pengingat aktif", color=interactions.Color.blue())
         for reminder in reminders:
             waktu = datetime.fromisoformat(reminder["remind_at"])
             embed.add_field(
@@ -98,16 +97,16 @@ class Reminders(commands.GroupCog, name="reminder"):
                 value=reminder["message"],
                 inline=False,
             )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="delete", description="Hapus pengingat berdasarkan ID.")
-    async def delete(self, interaction: discord.Interaction, reminder_id: int) -> None:
-        if self.bot.reminder_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(name='delete', description='Hapus pengingat berdasarkan ID.')
+    async def delete(self, ctx: interactions.SlashContext, reminder_id: int) -> None:
+        if self.bot.reminder_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
         await self.bot.reminder_repo.delete(reminder_id)
-        await interaction.response.send_message(f"Pengingat dengan ID {reminder_id} dihapus.", ephemeral=True)
+        await ctx.send(f"Pengingat dengan ID {reminder_id} dihapus.", ephemeral=True)
 
 
-async def setup(bot: ForUS) -> None:
-    await bot.add_cog(Reminders(bot))
+def setup(bot: ForUS) -> None:
+    Reminders(bot)

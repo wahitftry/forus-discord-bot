@@ -9,9 +9,7 @@ from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
 import aiohttp
-import discord
-from discord import app_commands
-from discord.ext import commands
+import interactions
 
 from bot.services.cache import TTLCache
 from bot.services.utility_tools import (
@@ -37,7 +35,7 @@ class PrayerAPIError(RuntimeError):
     """Kesalahan umum ketika mengambil data jadwal sholat."""
 
 
-class Utility(commands.Cog):
+class Utility(interactions.Extension):
     def __init__(self, bot: ForUS) -> None:
         self.bot = bot
         self.launch_time = time.time()
@@ -45,10 +43,10 @@ class Utility(commands.Cog):
         self.prayer_cache = TTLCache(ttl=PRAYER_CACHE_TTL)
         self.lookup_cache = TTLCache(ttl=LOOKUP_CACHE_TTL)
 
-    async def cog_unload(self) -> None:
+    def drop(self) -> None:
         await self.session.close()
 
-    async def _get_default_timezone(self, guild: discord.Guild | None) -> str:
+    async def _get_default_timezone(self, guild: interactions.Guild | None) -> str:
         if guild and self.bot.guild_repo is not None:
             settings = await self.bot.guild_repo.get(guild.id)
             if settings and settings.timezone:
@@ -80,19 +78,19 @@ class Utility(commands.Cog):
             return value
         return value[: limit - 3] + "..."
 
-    @app_commands.command(name="ping", description="Cek latensi bot.")
-    async def ping(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(
+    @interactions.slash_command(name='ping', description='Cek latensi bot.')
+    async def ping(self, ctx: interactions.SlashContext) -> None:
+        await ctx.send(
             f"Pong! Latensi gateway: {self.bot.latency * 1000:.0f} ms",
             ephemeral=True,
         )
 
-    @app_commands.command(name="help", description="Daftar perintah bot.")
-    async def help(self, interaction: discord.Interaction) -> None:
-        embed = discord.Embed(
+    @interactions.slash_command(name='help', description='Daftar perintah bot.')
+    async def help(self, ctx: interactions.SlashContext) -> None:
+        embed = interactions.Embed(
             title="Panduan Perintah",
             description="Berikut beberapa perintah utama. Gunakan auto-complete di Discord untuk melihat semua perintah.",
-            color=discord.Color.blurple(),
+            color=interactions.Color.blurple(),
         )
         embed.add_field(name="/ping", value="Menampilkan latensi bot.", inline=False)
         embed.add_field(name="/userinfo", value="Informasi dasar pengguna.", inline=False)
@@ -108,36 +106,36 @@ class Utility(commands.Cog):
         embed.add_field(name="/carijadwalsholat", value="Cari ID kota (Indonesia) atau kode JAKIM zona (Malaysia).", inline=False)
         embed.add_field(name="/audit recent", value="Ringkasan aktivitas penting dari log audit internal.", inline=False)
         embed.add_field(name="/audit stats", value="Statistik frekuensi aksi audit dalam rentang waktu tertentu.", inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="timestamp", description="Konversi waktu menjadi berbagai format timestamp Discord siap pakai.")
+    @interactions.slash_command(name='timestamp', description='Konversi waktu menjadi berbagai format timestamp Discord siap pakai.')
     @app_commands.describe(
         waktu="Waktu target (contoh: 2025-01-31 19:30)",
         zona_waktu="Zona waktu asal. Kosongkan untuk mengikuti pengaturan server atau Asia/Jakarta.",
     )
-    async def timestamp(self, interaction: discord.Interaction, waktu: str, zona_waktu: str | None = None) -> None:
-        default_tz_name = await self._get_default_timezone(interaction.guild)
+    async def timestamp(self, ctx: interactions.SlashContext, waktu: str, zona_waktu: str | None = None) -> None:
+        default_tz_name = await self._get_default_timezone(ctx.guild)
         try:
             source_tz = resolve_timezone(zona_waktu, fallback=default_tz_name)
         except ValueError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
+            await ctx.send(str(exc), ephemeral=True)
             return
 
         try:
             local_dt = parse_datetime_input(waktu, source_tz)
         except ValueError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
+            await ctx.send(str(exc), ephemeral=True)
             return
 
         utc_dt = local_dt.astimezone(dt_timezone.utc)
         variants = discord_timestamp_variants(local_dt)
-        embed = discord.Embed(
+        embed = interactions.Embed(
             title="Format Timestamp Discord",
             description=(
                 f"Waktu sumber: {discord.utils.format_dt(local_dt, style='F')}\n"
                 f"Zona waktu: {format_timezone_display(source_tz)}"
             ),
-            color=discord.Color.teal(),
+            color=interactions.Color.teal(),
         )
         embed.add_field(name="Unix", value=f"`{int(utc_dt.timestamp())}`", inline=False)
         for label, formatted in variants:
@@ -148,9 +146,9 @@ class Utility(commands.Cog):
             inline=False,
         )
         embed.set_footer(text="Salin format yang sesuai dan tempelkan langsung ke chat Discord.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="timezone", description="Konversi waktu antar beberapa zona sekaligus.")
+    @interactions.slash_command(name='timezone', description='Konversi waktu antar beberapa zona sekaligus.')
     @app_commands.describe(
         waktu="Waktu sumber (contoh: 2025-01-31 19:30)",
         zona_asal="Zona waktu asal. Kosongkan untuk mengikuti pengaturan server atau Asia/Jakarta.",
@@ -158,22 +156,22 @@ class Utility(commands.Cog):
     )
     async def timezone(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         waktu: str,
         zona_asal: str | None = None,
         zona_tujuan: str | None = None,
     ) -> None:
-        default_tz_name = await self._get_default_timezone(interaction.guild)
+        default_tz_name = await self._get_default_timezone(ctx.guild)
         try:
             origin_tz = resolve_timezone(zona_asal, fallback=default_tz_name)
         except ValueError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
+            await ctx.send(str(exc), ephemeral=True)
             return
 
         try:
             origin_dt = parse_datetime_input(waktu, origin_tz)
         except ValueError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
+            await ctx.send(str(exc), ephemeral=True)
             return
 
         raw_targets = zona_tujuan or "UTC"
@@ -201,16 +199,16 @@ class Utility(commands.Cog):
             message = "Tidak ada zona tujuan valid yang diberikan."
             if errors:
                 message += f" Zona tidak valid: {', '.join(errors)}."
-            await interaction.response.send_message(message, ephemeral=True)
+            await ctx.send(message, ephemeral=True)
             return
 
-        embed = discord.Embed(
+        embed = interactions.Embed(
             title="Konversi Zona Waktu",
             description=(
                 f"Sumber: {discord.utils.format_dt(origin_dt, style='F')}\n"
                 f"Zona asal: {format_timezone_display(origin_tz)}"
             ),
-            color=discord.Color.dark_teal(),
+            color=interactions.Color.dark_teal(),
         )
         for label, dt_value in results:
             embed.add_field(
@@ -224,9 +222,9 @@ class Utility(commands.Cog):
         if errors:
             truncated = self._limit_text(", ".join(errors), 200)
             embed.set_footer(text=f"Zona diabaikan: {truncated}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="carijadwalsholat", description="Cari ID kota (Indonesia) atau kode JAKIM (Malaysia) untuk jadwal sholat.")
+    @interactions.slash_command(name='carijadwalsholat', description='Cari ID kota (Indonesia) atau kode JAKIM (Malaysia) untuk jadwal sholat.')
     @app_commands.describe(
         negara="Pilih negara sumber data",
         keyword="Ketik nama kota/zona yang ingin dicari",
@@ -240,14 +238,14 @@ class Utility(commands.Cog):
     )
     async def carijadwalsholat(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         negara: app_commands.Choice[str],
         keyword: str,
         batas: app_commands.Range[int, 1, 25] = 10,
     ) -> None:
         keyword = keyword.strip()
         if len(keyword) < 2:
-            await interaction.response.send_message(
+            await ctx.send(
                 "Masukkan minimal 2 karakter untuk melakukan pencarian.",
                 ephemeral=True,
             )
@@ -265,40 +263,40 @@ class Utility(commands.Cog):
                 limited = results[:batas]
                 embed = self._build_search_embed_malaysia(keyword, limited)
         except PrayerAPIError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
+            await ctx.send(str(exc), ephemeral=True)
             return
 
         if not limited:
-            await interaction.response.send_message(
+            await ctx.send(
                 "Tidak ada hasil yang cocok. Coba kata kunci lain.",
                 ephemeral=True,
             )
             return
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="userinfo", description="Menampilkan info pengguna.")
-    async def userinfo(self, interaction: discord.Interaction, user: discord.User | None = None) -> None:
-        user = user or interaction.user
-        embed = discord.Embed(title=f"Info {user.display_name}", color=discord.Color.green())
+    @interactions.slash_command(name='userinfo', description='Menampilkan info pengguna.')
+    async def userinfo(self, ctx: interactions.SlashContext, user: interactions.User | None = None) -> None:
+        user = user or ctx.author
+        embed = interactions.Embed(title=f"Info {user.display_name}", color=interactions.Color.green())
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.add_field(name="ID", value=str(user.id))
         embed.add_field(name="Bot?", value="Ya" if user.bot else "Tidak")
         embed.add_field(name="Dibuat", value=discord.utils.format_dt(user.created_at, style="F"), inline=False)
-        if isinstance(user, discord.Member):
+        if isinstance(user, interactions.Member):
             embed.add_field(name="Bergabung", value=discord.utils.format_dt(user.joined_at, style="F"), inline=False)
             roles = ", ".join(role.mention for role in user.roles[1:]) or "Tidak ada"
             embed.add_field(name="Role", value=roles, inline=False)
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="roleinfo", description="Tampilkan detail lengkap sebuah role di server.")
-    async def roleinfo(self, interaction: discord.Interaction, role: discord.Role) -> None:
-        if interaction.guild is None:
-            await interaction.response.send_message("Perintah ini hanya dapat digunakan di dalam server.", ephemeral=True)
+    @interactions.slash_command(name='roleinfo', description='Tampilkan detail lengkap sebuah role di server.')
+    async def roleinfo(self, ctx: interactions.SlashContext, role: discord.Role) -> None:
+        if ctx.guild is None:
+            await ctx.send("Perintah ini hanya dapat digunakan di dalam server.", ephemeral=True)
             return
 
-        color = role.color if role.color.value else discord.Color.light_gray()
-        embed = discord.Embed(
+        color = role.color if role.color.value else interactions.Color.light_gray()
+        embed = interactions.Embed(
             title=f"Role: {role.name}",
             description=role.mention if not role.is_default() else "Role default (@everyone)",
             color=color,
@@ -336,16 +334,16 @@ class Utility(commands.Cog):
             embed.add_field(name="Contoh izin aktif", value=preview or "-", inline=False)
 
         embed.set_footer(text=f"ID: {role.id}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="serverinfo", description="Menampilkan info server.")
-    async def serverinfo(self, interaction: discord.Interaction) -> None:
-        guild = interaction.guild
+    @interactions.slash_command(name='serverinfo', description='Menampilkan info server.')
+    async def serverinfo(self, ctx: interactions.SlashContext) -> None:
+        guild = ctx.guild
         if guild is None:
-            await interaction.response.send_message("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
+            await ctx.send("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
             return
         stats = gather_guild_statistics(guild)
-        embed = discord.Embed(title=guild.name, color=discord.Color.gold())
+        embed = interactions.Embed(title=guild.name, color=interactions.Color.gold())
         if guild.description:
             embed.description = self._limit_text(guild.description, 350)
         if guild.icon:
@@ -423,37 +421,37 @@ class Utility(commands.Cog):
             embed.add_field(name="Fitur Server", value=self._limit_text(formatted_features, 1024), inline=False)
 
         embed.set_footer(text=f"ID: {guild.id}")
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="channelinfo", description="Diagnostik lengkap sebuah channel. Kosongkan untuk channel saat ini.")
+    @interactions.slash_command(name='channelinfo', description='Diagnostik lengkap sebuah channel. Kosongkan untuk channel saat ini.')
     @app_commands.describe(channel="Channel yang ingin dianalisis. Kosongkan untuk menggunakan channel saat ini.")
     async def channelinfo(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         channel: discord.abc.GuildChannel | None = None,
     ) -> None:
-        if interaction.guild is None:
-            await interaction.response.send_message("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
+        if ctx.guild is None:
+            await ctx.send("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
             return
 
-        target = channel or interaction.channel
+        target = channel or ctx.channel
         if not isinstance(target, discord.abc.GuildChannel):
-            await interaction.response.send_message("Tidak dapat membaca informasi channel ini.", ephemeral=True)
+            await ctx.send("Tidak dapat membaca informasi channel ini.", ephemeral=True)
             return
 
         if isinstance(target, discord.VoiceChannel):
-            color = discord.Color.orange()
+            color = interactions.Color.orange()
         elif isinstance(target, discord.StageChannel):
-            color = discord.Color.dark_magenta()
+            color = interactions.Color.dark_magenta()
         elif isinstance(target, discord.CategoryChannel):
-            color = discord.Color.dark_gray()
+            color = interactions.Color.dark_gray()
         elif isinstance(target, discord.Thread):
-            color = discord.Color.gold()
+            color = interactions.Color.gold()
         else:
-            color = discord.Color.blurple()
+            color = interactions.Color.blurple()
 
         title = getattr(target, "name", str(target.id))
-        embed = discord.Embed(title=f"Channel #{title}", color=color)
+        embed = interactions.Embed(title=f"Channel #{title}", color=color)
         mention = getattr(target, "mention", None)
         if mention:
             embed.description = mention
@@ -483,7 +481,7 @@ class Utility(commands.Cog):
         if nsfw_flag is not None:
             embed.add_field(name="NSFW", value="Ya" if nsfw_flag else "Tidak", inline=True)
 
-        if isinstance(target, discord.TextChannel):
+        if isinstance(target, interactions.GuildText):
             slowmode = target.slowmode_delay or 0
             embed.add_field(name="Slowmode", value=f"{slowmode} detik" if slowmode else "Tidak aktif", inline=True)
             topic = self._limit_text(target.topic, 512) or "Tidak ada"
@@ -528,10 +526,10 @@ class Utility(commands.Cog):
                 embed.add_field(name="Slowmode", value=f"{slowmode} detik", inline=True)
 
         embed.set_footer(text=f"ID: {target.id}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="botstats", description="Statistik bot singkat.")
-    async def botstats(self, interaction: discord.Interaction) -> None:
+    @interactions.slash_command(name='botstats', description='Statistik bot singkat.')
+    async def botstats(self, ctx: interactions.SlashContext) -> None:
         uptime_seconds = int(time.time() - self.launch_time)
         days, remainder = divmod(uptime_seconds, 86400)
         hours, remainder = divmod(remainder, 3600)
@@ -550,7 +548,7 @@ class Utility(commands.Cog):
         shard_count = getattr(self.bot, "shard_count", None) or 1
         cog_count = len(self.bot.cogs)
 
-        embed = discord.Embed(title="Statistik Bot", color=discord.Color.purple())
+        embed = interactions.Embed(title="Statistik Bot", color=interactions.Color.purple())
         embed.add_field(name="Versi Python", value=platform.python_version(), inline=True)
         embed.add_field(name="discord.py", value=discord.__version__, inline=True)
         embed.add_field(name="Shard", value=str(shard_count), inline=True)
@@ -578,9 +576,9 @@ class Utility(commands.Cog):
             embed.add_field(name="ID job aktif", value=self._limit_text(preview, 200), inline=False)
 
         embed.set_footer(text="Gunakan /help untuk melihat seluruh kemampuan bot.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="jadwalsholat", description="Menampilkan jadwal sholat harian berdasarkan negara.")
+    @interactions.slash_command(name='jadwalsholat', description='Menampilkan jadwal sholat harian berdasarkan negara.')
     @app_commands.describe(
         negara="Pilih negara sumber jadwal.",
         lokasi="Masukkan ID kota (Indonesia) atau kode zona (Malaysia).",
@@ -596,7 +594,7 @@ class Utility(commands.Cog):
     )
     async def jadwalsholat(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         negara: app_commands.Choice[str],
         lokasi: str,
         tahun: int | None = None,
@@ -606,7 +604,7 @@ class Utility(commands.Cog):
         try:
             target_date = self._build_target_date(negara.value, tahun, bulan, tanggal)
         except PrayerAPIError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
+            await ctx.send(str(exc), ephemeral=True)
             return
 
         try:
@@ -620,9 +618,9 @@ class Utility(commands.Cog):
                 embed = self._build_embed_malaysia(lokasi, target_date, month_payload, day_payload)
         except PrayerAPIError as exc:
             if interaction.response.is_done():
-                await interaction.followup.send(str(exc), ephemeral=True)
+                await ctx.send(str(exc), ephemeral=True)
             else:
-                await interaction.response.send_message(str(exc), ephemeral=True)
+                await ctx.send(str(exc), ephemeral=True)
             return
         except Exception:  # noqa: BLE001
             logger = getattr(self.bot, "log", None)
@@ -630,20 +628,20 @@ class Utility(commands.Cog):
                 logger.exception("Gagal mengambil jadwal sholat")
             message = "Terjadi kesalahan saat mengambil jadwal sholat. Coba lagi nanti."
             if interaction.response.is_done():
-                await interaction.followup.send(message, ephemeral=True)
+                await ctx.send(message, ephemeral=True)
             else:
-                await interaction.response.send_message(message, ephemeral=True)
+                await ctx.send(message, ephemeral=True)
             return
 
         if interaction.response.is_done():
-            await interaction.followup.send(embed=embed)
+            await ctx.send(embed=embed)
         else:
-            await interaction.response.send_message(embed=embed)
+            await ctx.send(embed=embed)
 
     @jadwalsholat.autocomplete("lokasi")
     async def jadwalsholat_lokasi_autocomplete(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         current: str,
     ) -> list[app_commands.Choice[str]]:
         current = current.strip()
@@ -787,11 +785,11 @@ class Utility(commands.Cog):
                 return zone
         return None
 
-    def _build_search_embed_indonesia(self, keyword: str, results: list[dict[str, Any]]) -> discord.Embed:
-        embed = discord.Embed(
+    def _build_search_embed_indonesia(self, keyword: str, results: list[dict[str, Any]]) -> interactions.Embed:
+        embed = interactions.Embed(
             title="Pencarian Kota Jadwal Sholat (Indonesia)",
             description=f"Kata kunci: `{keyword}`",
-            color=discord.Color.blue(),
+            color=interactions.Color.blue(),
         )
         if not results:
             embed.add_field(name="Hasil", value="Tidak ditemukan kota yang cocok.", inline=False)
@@ -806,11 +804,11 @@ class Utility(commands.Cog):
         embed.set_footer(text="Sumber: api.myquran.com")
         return embed
 
-    def _build_search_embed_malaysia(self, keyword: str, results: list[dict[str, Any]]) -> discord.Embed:
-        embed = discord.Embed(
+    def _build_search_embed_malaysia(self, keyword: str, results: list[dict[str, Any]]) -> interactions.Embed:
+        embed = interactions.Embed(
             title="Pencarian Zona JAKIM (Malaysia)",
             description=f"Kata kunci: `{keyword}`",
-            color=discord.Color.dark_teal(),
+            color=interactions.Color.dark_teal(),
         )
         if not results:
             embed.add_field(name="Hasil", value="Tidak ditemukan zona yang cocok.", inline=False)
@@ -857,7 +855,7 @@ class Utility(commands.Cog):
         kota_id: str,
         month_payload: dict[str, Any],
         day_payload: dict[str, Any],
-    ) -> discord.Embed:
+    ) -> interactions.Embed:
         lokasi = month_payload.get("lokasi", kota_id)
         daerah = month_payload.get("daerah")
         judul = f"Jadwal Sholat • {lokasi.title() if isinstance(lokasi, str) else lokasi}"
@@ -865,7 +863,7 @@ class Utility(commands.Cog):
         if daerah:
             deskripsi += f"\n{daerah.title() if isinstance(daerah, str) else daerah}"
 
-        embed = discord.Embed(title=judul, description=deskripsi.strip(), color=discord.Color.teal())
+        embed = interactions.Embed(title=judul, description=deskripsi.strip(), color=interactions.Color.teal())
         for nama, key in [
             ("Imsak", "imsak"),
             ("Subuh", "subuh"),
@@ -889,7 +887,7 @@ class Utility(commands.Cog):
         target_date: date,
         month_payload: dict[str, Any],
         day_payload: dict[str, Any],
-    ) -> discord.Embed:
+    ) -> interactions.Embed:
         zone_detail = month_payload.get("zone_detail")
         readable_label = None
         daerah = None
@@ -909,7 +907,7 @@ class Utility(commands.Cog):
         if daerah:
             deskripsi_lines.append(daerah)
         deskripsi = "\n".join(deskripsi_lines)
-        embed = discord.Embed(title=judul, description=deskripsi, color=discord.Color.green())
+        embed = interactions.Embed(title=judul, description=deskripsi, color=interactions.Color.green())
 
         tz = MALAYSIA_TIMEZONE
 
@@ -944,5 +942,5 @@ class Utility(commands.Cog):
         return text[: limit - 1] + "…"
 
 
-async def setup(bot: ForUS) -> None:
-    await bot.add_cog(Utility(bot))
+def setup(bot: ForUS) -> None:
+    Utility(bot)

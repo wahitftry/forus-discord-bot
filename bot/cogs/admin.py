@@ -2,71 +2,139 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+import interactions
 
 if TYPE_CHECKING:
     from bot.main import ForUS
 
 
-@app_commands.default_permissions(administrator=True)
-class Admin(commands.GroupCog, name="setup"):
+class Admin(interactions.Extension):
     def __init__(self, bot: ForUS) -> None:
-        super().__init__()
         self.bot = bot
 
-    async def _respond_updated(self, interaction: discord.Interaction, message: str) -> None:
-        await interaction.response.send_message(message, ephemeral=True)
+    async def _respond_updated(self, ctx: interactions.SlashContext, message: str) -> None:
+        await ctx.send(message, ephemeral=True)
 
-    @app_commands.command(name="welcome", description="Setel channel sambutan.")
-    async def welcome(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
-        if self.bot.guild_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(
+        name="setup",
+        description="Konfigurasi server",
+        sub_cmd_name="welcome",
+        sub_cmd_description="Setel channel sambutan.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
+    @interactions.slash_option(
+        name="channel",
+        description="Channel untuk pesan sambutan",
+        opt_type=interactions.OptionType.CHANNEL,
+        required=True,
+    )
+    async def welcome(self, ctx: interactions.SlashContext, channel: interactions.GuildText) -> None:
+        if self.bot.guild_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        await self.bot.guild_repo.upsert(interaction.guild.id, welcome_channel_id=channel.id)
-        await self._respond_updated(interaction, f"Channel sambutan diset ke {channel.mention}.")
+        await self.bot.guild_repo.upsert(ctx.guild.id, welcome_channel_id=channel.id)
+        await self._respond_updated(ctx, f"Channel sambutan diset ke {channel.mention}.")
 
-    @app_commands.command(name="goodbye", description="Setel channel perpisahan.")
-    async def goodbye(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
-        if self.bot.guild_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(
+        name="setup",
+        description="Konfigurasi server",
+        sub_cmd_name="goodbye",
+        sub_cmd_description="Setel channel perpisahan.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
+    @interactions.slash_option(
+        name="channel",
+        description="Channel untuk pesan perpisahan",
+        opt_type=interactions.OptionType.CHANNEL,
+        required=True,
+    )
+    async def goodbye(self, ctx: interactions.SlashContext, channel: interactions.GuildText) -> None:
+        if self.bot.guild_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        await self.bot.guild_repo.upsert(interaction.guild.id, goodbye_channel_id=channel.id)
-        await self._respond_updated(interaction, f"Channel perpisahan diset ke {channel.mention}.")
+        await self.bot.guild_repo.upsert(ctx.guild.id, goodbye_channel_id=channel.id)
+        await self._respond_updated(ctx, f"Channel perpisahan diset ke {channel.mention}.")
 
-    @app_commands.command(name="log", description="Setel channel log moderasi.")
-    async def log(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
-        if self.bot.guild_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(
+        name="setup",
+        description="Konfigurasi server",
+        sub_cmd_name="log",
+        sub_cmd_description="Setel channel log moderasi.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
+    @interactions.slash_option(
+        name="channel",
+        description="Channel untuk log moderasi",
+        opt_type=interactions.OptionType.CHANNEL,
+        required=True,
+    )
+    async def log(self, ctx: interactions.SlashContext, channel: interactions.GuildText) -> None:
+        if self.bot.guild_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        await self.bot.guild_repo.upsert(interaction.guild.id, log_channel_id=channel.id)
-        await self._respond_updated(interaction, f"Channel log diset ke {channel.mention}.")
+        await self.bot.guild_repo.upsert(ctx.guild.id, log_channel_id=channel.id)
+        await self._respond_updated(ctx, f"Channel log diset ke {channel.mention}.")
 
-    @app_commands.command(name="autorole", description="Setel role otomatis saat anggota bergabung.")
-    async def autorole(self, interaction: discord.Interaction, role: discord.Role) -> None:
-        if self.bot.guild_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(
+        name="setup",
+        description="Konfigurasi server",
+        sub_cmd_name="autorole",
+        sub_cmd_description="Setel role otomatis saat anggota bergabung.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
+    @interactions.slash_option(
+        name="role",
+        description="Role yang diberikan otomatis",
+        opt_type=interactions.OptionType.ROLE,
+        required=True,
+    )
+    async def autorole(self, ctx: interactions.SlashContext, role: interactions.Role) -> None:
+        if self.bot.guild_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        await self.bot.guild_repo.upsert(interaction.guild.id, autorole_id=role.id)
-        await self._respond_updated(interaction, f"Role otomatis diset ke {role.mention}.")
+        await self.bot.guild_repo.upsert(ctx.guild.id, autorole_id=role.id)
+        await self._respond_updated(ctx, f"Role otomatis diset ke {role.mention}.")
 
-    @app_commands.command(name="timezone", description="Setel zona waktu default.")
-    async def timezone(self, interaction: discord.Interaction, zona: str) -> None:
-        if self.bot.guild_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(
+        name="setup",
+        description="Konfigurasi server",
+        sub_cmd_name="timezone",
+        sub_cmd_description="Setel zona waktu default.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
+    @interactions.slash_option(
+        name="zona",
+        description="Zona waktu (misal: Asia/Jakarta)",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    async def timezone(self, ctx: interactions.SlashContext, zona: str) -> None:
+        if self.bot.guild_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        await self.bot.guild_repo.upsert(interaction.guild.id, timezone=zona)
-        await self._respond_updated(interaction, f"Zona waktu default diperbarui ke {zona}.")
+        await self.bot.guild_repo.upsert(ctx.guild.id, timezone=zona)
+        await self._respond_updated(ctx, f"Zona waktu default diperbarui ke {zona}.")
 
-    @app_commands.command(name="ticket", description="Setel kategori tiket.")
-    async def ticket(self, interaction: discord.Interaction, kategori: discord.CategoryChannel) -> None:
-        if self.bot.guild_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(
+        name="setup",
+        description="Konfigurasi server",
+        sub_cmd_name="ticket",
+        sub_cmd_description="Setel kategori tiket.",
+        default_member_permissions=interactions.Permissions.ADMINISTRATOR,
+    )
+    @interactions.slash_option(
+        name="kategori",
+        description="Kategori untuk kanal tiket",
+        opt_type=interactions.OptionType.CHANNEL,
+        required=True,
+    )
+    async def ticket(self, ctx: interactions.SlashContext, kategori: interactions.GuildCategory) -> None:
+        if self.bot.guild_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        await self.bot.guild_repo.upsert(interaction.guild.id, ticket_category_id=kategori.id)
-        await self._respond_updated(interaction, f"Kategori tiket diset ke {kategori.name}.")
+        await self.bot.guild_repo.upsert(ctx.guild.id, ticket_category_id=kategori.id)
+        await self._respond_updated(ctx, f"Kategori tiket diset ke {kategori.name}.")
 
 
-async def setup(bot: ForUS) -> None:
-    await bot.add_cog(Admin(bot))
+def setup(bot: ForUS) -> None:
+    Admin(bot)

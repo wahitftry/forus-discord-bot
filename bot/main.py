@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import discord
-from discord.ext import commands
+import interactions
+from interactions import Intents
 
 from .config import BotConfig, load_config
 from .database.core import Database
@@ -30,16 +30,18 @@ from .services.scheduler import Scheduler
 from .services.presence import RichPresenceManager
 
 
-class ForUS(commands.Bot):
+class ForUS(interactions.Client):
     def __init__(self, config: BotConfig) -> None:
-        intents = discord.Intents.default()
-        intents.members = True
-        intents.message_content = True
+        intents = Intents.DEFAULT
+        intents |= Intents.GUILD_MEMBERS
+        intents |= Intents.MESSAGE_CONTENT
 
         super().__init__(
-            command_prefix="!",  # fallback untuk legacy
             intents=intents,
-            application_id=None,
+            sync_interactions=True,
+            delete_unused_application_cmds=False,
+            send_command_tracebacks=True,
+            token=config.token,
         )
         self.config = config
         self.db: Database | None = None
@@ -111,89 +113,52 @@ class ForUS(commands.Bot):
             "bot.cogs.activity_log",
         ):
             try:
-                await self.load_extension(extension)
+                self.load_extension(extension)
                 self.log.info("Berhasil memuat extension %s", extension)
             except Exception:  # noqa: BLE001
                 self.log.exception("Gagal memuat extension %s", extension)
 
     async def _synchronize_commands(self) -> None:
+        # interactions.py handles command syncing automatically
+        # with sync_interactions=True in __init__
         if self.config.guild_ids:
-            await self._synchronize_guild_commands(self.config.guild_ids)
-            return
-        await self._synchronize_global_commands_only()
+            # Set debug scope for guild-specific sync
+            for guild_id in self.config.guild_ids:
+                self.log.info("Akan sinkronisasi perintah ke guild %s", guild_id)
+        else:
+            self.log.info("Akan sinkronisasi perintah global")
 
     async def _sync_commands_for_guild(self, guild_id: int) -> None:
-        guild = discord.Object(id=guild_id)
-        try:
-            self.tree.clear_commands(guild=guild)
-            global_commands = self.tree.get_commands(guild=None)
-            #if global_commands:
-                #self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            self.log.info("Sinkronisasi perintah untuk guild %s", guild_id)
-        except Exception:  # noqa: BLE001
-            self.log.exception("Gagal sinkronisasi command untuk guild %s", guild_id)
+        # Not needed for interactions.py - handled automatically
+        pass
 
     async def _synchronize_guild_commands(self, guild_ids: list[int]) -> None:
-        unique_ids = list(dict.fromkeys(guild_ids))
-        for guild_id in unique_ids:
-            await self._sync_commands_for_guild(guild_id)
-        try:
-            self.tree.clear_commands(guild=None)
-            await self.tree.sync()
-            self.log.info("Membersihkan perintah global untuk mencegah duplikasi")
-        except Exception:  # noqa: BLE001
-            self.log.exception("Gagal membersihkan perintah global")
+        # Not needed for interactions.py - handled automatically
+        pass
 
     async def _synchronize_global_commands_only(self) -> None:
-        seen_guilds: set[int] = set()
-        try:
-            async for partial_guild in self.fetch_guilds(limit=None):
-                if partial_guild.id in seen_guilds:
-                    continue
-                seen_guilds.add(partial_guild.id)
-                await self._sync_commands_for_guild(partial_guild.id)
-        except Exception:  # noqa: BLE001
-            self.log.exception("Gagal mengambil daftar guild untuk pembersihan command")
+        # Not needed for interactions.py - handled automatically
+        pass
 
-        try:
-            await self.tree.sync()
-            self.log.info("Sinkronisasi perintah slash global selesai setelah pembersihan guild")
-        except Exception:  # noqa: BLE001
-            self.log.exception("Gagal sinkronisasi global perintah slash")
-
-    async def on_ready(self) -> None:  # type: ignore[override]
-        await self._invoke_parent_event("on_ready")
+    @interactions.listen()
+    async def on_startup(self) -> None:
         self.log.info("Bot siap sebagai %s (ID: %s)", self.user, getattr(self.user, "id", "?"))
         self.presence_manager.request_refresh()
 
-    async def on_guild_join(self, guild: discord.Guild) -> None:  # type: ignore[override]
-        await self._invoke_parent_event("on_guild_join", guild)
+    @interactions.listen()
+    async def on_guild_join(self, event: interactions.events.GuildJoin) -> None:
         self.presence_manager.request_refresh()
 
-    async def on_guild_remove(self, guild: discord.Guild) -> None:  # type: ignore[override]
-        await self._invoke_parent_event("on_guild_remove", guild)
+    @interactions.listen()
+    async def on_guild_left(self, event: interactions.events.GuildLeft) -> None:
         self.presence_manager.request_refresh()
-
-    async def _invoke_parent_event(self, name: str, *args: Any) -> None:
-        parent = getattr(super(), name, None)
-        if not callable(parent):
-            return
-        try:
-            result = parent(*args)
-        except TypeError:
-            self.log.debug("Gagal memanggil event induk %s", name, exc_info=True)
-            return
-        if inspect.isawaitable(result):
-            await result
 
 
 async def main() -> None:
     config = load_config(Path(".env"))
     setup_logging(config.log_level)
     bot = ForUS(config)
-    async with bot:
-        await bot.start(config.token)
+    await bot.astart()
 
 
 if __name__ == "__main__":

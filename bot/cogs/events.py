@@ -5,8 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import discord
-from discord.ext import commands
+import interactions
 
 if TYPE_CHECKING:
     from bot.main import ForUS
@@ -19,7 +18,7 @@ from bot.services.automod import AutomodEngine
 from bot.services.cache import TTLCache
 
 
-class Events(commands.Cog):
+class Events(interactions.Extension):
     def __init__(self, bot: ForUS) -> None:
         self.bot = bot
         self.banned_words = self._load_banned_words()
@@ -33,15 +32,15 @@ class Events(commands.Cog):
             return set()
         return {line.strip().lower() for line in file_path.read_text(encoding="utf-8").splitlines() if line.strip()}
 
-    @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member) -> None:
+    @interactions.listen()
+    async def on_member_join(self, member: interactions.Member) -> None:
         if self.bot.guild_repo is None:
             return
         settings = await self.bot.guild_repo.get(member.guild.id)
         if settings:
             if settings.welcome_channel_id:
                 channel = member.guild.get_channel(settings.welcome_channel_id)
-                if isinstance(channel, discord.TextChannel):
+                if isinstance(channel, interactions.GuildText):
                     await channel.send(f"Selamat datang {member.mention}! Jangan lupa baca peraturan ya.")
             if settings.autorole_id:
                 role = member.guild.get_role(settings.autorole_id)
@@ -51,17 +50,17 @@ class Events(commands.Cog):
                     except discord.Forbidden:
                         pass
 
-    @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member) -> None:
+    @interactions.listen()
+    async def on_member_remove(self, member: interactions.Member) -> None:
         if self.bot.guild_repo is None:
             return
         settings = await self.bot.guild_repo.get(member.guild.id)
         if settings and settings.goodbye_channel_id:
             channel = member.guild.get_channel(settings.goodbye_channel_id)
-            if isinstance(channel, discord.TextChannel):
+            if isinstance(channel, interactions.GuildText):
                 await channel.send(f"Selamat tinggal {member.display_name}. Semoga kembali lagi!")
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_message(self, message: discord.Message) -> None:
         if message.guild is None or message.author.bot:
             return
@@ -133,10 +132,10 @@ class Events(commands.Cog):
 
         log_channel = await self._get_log_channel(message.guild)
         if log_channel:
-            embed = discord.Embed(
+            embed = interactions.Embed(
                 title="Automod",
                 description=violation.reason,
-                color=discord.Color.red(),
+                color=interactions.Color.red(),
                 timestamp=datetime.now(timezone.utc),
             )
             embed.add_field(name="Pengguna", value=message.author.mention)
@@ -158,13 +157,13 @@ class Events(commands.Cog):
 
         return True
 
-    async def _get_log_channel(self, guild: discord.Guild) -> discord.TextChannel | None:
+    async def _get_log_channel(self, guild: interactions.Guild) -> interactions.GuildText | None:
         if self.bot.guild_repo is None:
             return None
         settings = await self.bot.guild_repo.get(guild.id)
         if settings and settings.log_channel_id:
             channel = guild.get_channel(settings.log_channel_id)
-            if isinstance(channel, discord.TextChannel):
+            if isinstance(channel, interactions.GuildText):
                 return channel
         return None
 
@@ -196,10 +195,10 @@ class Events(commands.Cog):
         guild = message.guild
         if guild is None:
             return
-        embed = discord.Embed(
+        embed = interactions.Embed(
             title="Level Up!",
             description=f"{message.author.mention} mencapai level {progress.profile.level}!",
-            color=discord.Color.orange(),
+            color=interactions.Color.orange(),
             timestamp=datetime.now(timezone.utc),
         )
         embed.add_field(
@@ -214,16 +213,16 @@ class Events(commands.Cog):
         if reward is None:
             return
         role = guild.get_role(reward.role_id)
-        if role and isinstance(message.author, discord.Member) and role not in message.author.roles:
+        if role and isinstance(message.author, interactions.Member) and role not in message.author.roles:
             try:
                 await message.author.add_roles(role, reason="Hadiah level")
             except discord.Forbidden:
                 pass
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_automod_rules_updated(self, guild_id: int) -> None:
         await self._automod_cache.invalidate(f"automod:{guild_id}")
 
 
-async def setup(bot: ForUS) -> None:
-    await bot.add_cog(Events(bot))
+def setup(bot: ForUS) -> None:
+    Events(bot)

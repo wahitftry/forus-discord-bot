@@ -4,9 +4,7 @@ from datetime import datetime, time, timezone
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+import interactions
 
 if TYPE_CHECKING:
     from bot.main import ForUS
@@ -15,7 +13,8 @@ DEFAULT_TZ = ZoneInfo("Asia/Jakarta")
 
 
 @app_commands.default_permissions(manage_guild=True)
-class Announcements(commands.GroupCog, name="announcement"):
+class Announcements(interactions.Extension):
+    # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:
         super().__init__()
         self.bot = bot
@@ -38,12 +37,12 @@ class Announcements(commands.GroupCog, name="announcement"):
             announcement_id,
         )
 
-    async def _ensure_repos(self, interaction: discord.Interaction) -> bool:
-        if not interaction.guild:
-            await interaction.response.send_message("Perintah ini hanya dapat digunakan di server.", ephemeral=True)
+    async def _ensure_repos(self, ctx: interactions.SlashContext) -> bool:
+        if not ctx.guild:
+            await ctx.send("Perintah ini hanya dapat digunakan di server.", ephemeral=True)
             return False
         if self.bot.announcement_repo is None or self.bot.guild_repo is None:
-            await interaction.response.send_message("Repositori pengumuman belum siap.", ephemeral=True)
+            await ctx.send("Repositori pengumuman belum siap.", ephemeral=True)
             return False
         return True
 
@@ -58,7 +57,7 @@ class Announcements(commands.GroupCog, name="announcement"):
             await self.bot.announcement_repo.cancel(announcement_id)
             return
         channel = guild.get_channel(announcement.channel_id)
-        if not isinstance(channel, discord.TextChannel):
+        if not isinstance(channel, interactions.GuildText):
             await self.bot.announcement_repo.cancel(announcement_id)
             return
         content_parts: list[str] = []
@@ -69,10 +68,10 @@ class Announcements(commands.GroupCog, name="announcement"):
         content = "\n\n".join(content_parts) if content_parts else None
         embed = None
         if announcement.embed_title or announcement.embed_description or announcement.image_url:
-            embed = discord.Embed(
+            embed = interactions.Embed(
                 title=announcement.embed_title or None,
                 description=announcement.embed_description or None,
-                color=discord.Color.brand_green(),
+                color=interactions.Color.brand_green(),
             )
             if announcement.image_url:
                 embed.set_image(url=announcement.image_url)
@@ -94,7 +93,7 @@ class Announcements(commands.GroupCog, name="announcement"):
         except discord.Forbidden:
             await self.bot.announcement_repo.cancel(announcement_id)
 
-    @app_commands.command(name="schedule", description="Jadwalkan pengumuman otomatis.")
+    @interactions.slash_command(name='schedule', description='Jadwalkan pengumuman otomatis.')
     @app_commands.describe(
         channel="Channel tujuan",
         tanggal="Tanggal (YYYY-MM-DD)",
@@ -108,8 +107,8 @@ class Announcements(commands.GroupCog, name="announcement"):
     )
     async def schedule(
         self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel,
+        ctx: interactions.SlashContext,
+        channel: interactions.GuildText,
         tanggal: str,
         jam: str,
         zona_waktu: str | None = None,
@@ -121,33 +120,33 @@ class Announcements(commands.GroupCog, name="announcement"):
     ) -> None:
         if not await self._ensure_repos(interaction):
             return
-        assert interaction.guild is not None
+        assert ctx.guild is not None
         try:
             tanggal_obj = datetime.strptime(tanggal, "%Y-%m-%d").date()
             jam_obj = datetime.strptime(jam, "%H:%M").time()
         except ValueError:
-            await interaction.response.send_message("Format tanggal atau jam tidak valid.", ephemeral=True)
+            await ctx.send("Format tanggal atau jam tidak valid.", ephemeral=True)
             return
         tz_name = zona_waktu
         if not tz_name:
-            settings = await self.bot.guild_repo.get(interaction.guild.id)
+            settings = await self.bot.guild_repo.get(ctx.guild.id)
             tz_name = settings.timezone if settings else DEFAULT_TZ.key
         try:
             tzinfo = ZoneInfo(tz_name)
         except Exception:  # noqa: BLE001
-            await interaction.response.send_message("Zona waktu tidak dikenali.", ephemeral=True)
+            await ctx.send("Zona waktu tidak dikenali.", ephemeral=True)
             return
         local_dt = datetime.combine(tanggal_obj, jam_obj, tzinfo)
         utc_dt = local_dt.astimezone(timezone.utc)
         if utc_dt <= datetime.now(timezone.utc):
-            await interaction.response.send_message("Waktu jadwal harus di masa depan.", ephemeral=True)
+            await ctx.send("Waktu jadwal harus di masa depan.", ephemeral=True)
             return
         repo = self.bot.announcement_repo
         assert repo is not None
         announcement = await repo.create(
-            interaction.guild.id,
+            ctx.guild.id,
             channel.id,
-            interaction.user.id,
+            ctx.author.id,
             content=pesan,
             embed_title=judul,
             embed_description=deskripsi_embed,
@@ -158,29 +157,29 @@ class Announcements(commands.GroupCog, name="announcement"):
         self._schedule_announcement(announcement.id, utc_dt)
         if self.bot.audit_repo is not None:
             await self.bot.audit_repo.add_entry(
-                interaction.guild.id,
+                ctx.guild.id,
                 action="announcement.schedule",
-                actor_id=interaction.user.id,
+                actor_id=ctx.author.id,
                 target_id=channel.id,
                 context=str(announcement.id),
             )
-        await interaction.response.send_message(
+        await ctx.send(
             f"Pengumuman dijadwalkan untuk {discord.utils.format_dt(utc_dt, style='F')} (UTC). ID: {announcement.id}",
             ephemeral=True,
         )
 
-    @app_commands.command(name="list", description="Daftar pengumuman yang belum terkirim.")
-    async def list_pending(self, interaction: discord.Interaction) -> None:
+    @interactions.slash_command(name='list', description='Daftar pengumuman yang belum terkirim.')
+    async def list_pending(self, ctx: interactions.SlashContext) -> None:
         if not await self._ensure_repos(interaction):
             return
-        assert interaction.guild is not None
+        assert ctx.guild is not None
         repo = self.bot.announcement_repo
         assert repo is not None
-        scheduled = await repo.list_pending(interaction.guild.id)
+        scheduled = await repo.list_pending(ctx.guild.id)
         if not scheduled:
-            await interaction.response.send_message("Tidak ada pengumuman tertunda.", ephemeral=True)
+            await ctx.send("Tidak ada pengumuman tertunda.", ephemeral=True)
             return
-        embed = discord.Embed(title="Pengumuman Tertunda", color=discord.Color.purple())
+        embed = interactions.Embed(title="Pengumuman Tertunda", color=interactions.Color.purple())
         for item in scheduled[:15]:
             waktu = datetime.fromisoformat(item.scheduled_at).astimezone(timezone.utc)
             embed.add_field(
@@ -188,22 +187,22 @@ class Announcements(commands.GroupCog, name="announcement"):
                 value=f"Dijadwalkan: {discord.utils.format_dt(waktu, style='F')}\nStatus: {item.status}",
                 inline=False,
             )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="cancel", description="Batalkan pengumuman yang tertunda.")
-    async def cancel(self, interaction: discord.Interaction, pengumuman_id: int) -> None:
+    @interactions.slash_command(name='cancel', description='Batalkan pengumuman yang tertunda.')
+    async def cancel(self, ctx: interactions.SlashContext, pengumuman_id: int) -> None:
         if not await self._ensure_repos(interaction):
             return
         repo = self.bot.announcement_repo
         assert repo is not None
         success = await repo.cancel(pengumuman_id)
         if not success:
-            await interaction.response.send_message("Pengumuman tidak ditemukan atau sudah diproses.", ephemeral=True)
+            await ctx.send("Pengumuman tidak ditemukan atau sudah diproses.", ephemeral=True)
             return
         if self.bot.scheduler:
             self.bot.scheduler.cancel(f"announcement-{pengumuman_id}")
-        await interaction.response.send_message("Pengumuman dibatalkan.", ephemeral=True)
+        await ctx.send("Pengumuman dibatalkan.", ephemeral=True)
 
 
-async def setup(bot: ForUS) -> None:
-    await bot.add_cog(Announcements(bot))
+def setup(bot: ForUS) -> None:
+    Announcements(bot)

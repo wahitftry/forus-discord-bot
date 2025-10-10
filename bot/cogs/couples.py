@@ -4,9 +4,7 @@ import random
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Optional, Sequence
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+import interactions
 
 if TYPE_CHECKING:
     from bot.main import ForUS
@@ -188,35 +186,36 @@ def _normalize_hex_color(value: Optional[str]) -> Optional[str]:
     return f"#{cleaned.upper()}"
 
 
-def _color_from_hex(value: Optional[str]) -> discord.Color:
+def _color_from_hex(value: Optional[str]) -> interactions.Color:
     if value is None:
-        return discord.Color.blurple()
+        return interactions.Color.blurple()
     try:
-        return discord.Color(int(value.lstrip("#"), 16))
+        return interactions.Color(int(value.lstrip("#"), 16))
     except ValueError:
-        return discord.Color.blurple()
+        return interactions.Color.blurple()
 
 
-class Couples(commands.GroupCog, name="couple"):
+class Couples(interactions.Extension):
+    # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:
         super().__init__()
         self.bot = bot
 
-    async def _get_repo(self, interaction: discord.Interaction) -> Optional[tuple[int, ForUS]]:
-        if interaction.guild is None:
-            await interaction.response.send_message("Perintah ini hanya bisa dipakai di dalam server.", ephemeral=True)
+    async def _get_repo(self, ctx: interactions.SlashContext) -> Optional[tuple[int, ForUS]]:
+        if ctx.guild is None:
+            await ctx.send("Perintah ini hanya bisa dipakai di dalam server.", ephemeral=True)
             return None
         if self.bot.couple_repo is None:
-            await interaction.response.send_message("Repositori pasangan belum siap. Coba lagi nanti.", ephemeral=True)
+            await ctx.send("Repositori pasangan belum siap. Coba lagi nanti.", ephemeral=True)
             return None
-        return interaction.guild.id, self.bot
+        return ctx.guild.id, self.bot
 
-    async def _get_active_record(self, guild_id: int, interaction: discord.Interaction) -> Optional[object]:
+    async def _get_active_record(self, guild_id: int, ctx: interactions.SlashContext) -> Optional[object]:
         repo = self.bot.couple_repo
         assert repo is not None
-        record = await repo.get_relationship(guild_id, interaction.user.id, statuses=("active",))
+        record = await repo.get_relationship(guild_id, ctx.author.id, statuses=("active",))
         if record is None:
-            await interaction.response.send_message("Kamu belum memiliki pasangan aktif.", ephemeral=True)
+            await ctx.send("Kamu belum memiliki pasangan aktif.", ephemeral=True)
             return None
         return record
 
@@ -275,16 +274,16 @@ class Couples(commands.GroupCog, name="couple"):
 
     async def _build_status_embed(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         viewer: discord.abc.User,
         record,
-    ) -> discord.Embed:
+    ) -> interactions.Embed:
         repo = self.bot.couple_repo
         assert repo is not None
         profile = await repo.get_profile(record.id)
         partner_id = record.partner_id(viewer.id)
-        partner = await self._resolve_member(interaction.guild, partner_id) if partner_id else None
-        embed = discord.Embed(title="Status Pasangan", color=_color_from_hex(profile.theme_color))
+        partner = await self._resolve_member(ctx.guild, partner_id) if partner_id else None
+        embed = interactions.Embed(title="Status Pasangan", color=_color_from_hex(profile.theme_color))
         embed.add_field(name="Pengguna", value=viewer.mention, inline=True)
         partner_value = partner.mention if partner else (f"<@{partner_id}>" if partner_id else "-")
         embed.add_field(name="Pasangan", value=partner_value, inline=True)
@@ -348,7 +347,7 @@ class Couples(commands.GroupCog, name="couple"):
 
         return embed
 
-    async def _resolve_member(self, guild: discord.Guild, user_id: int) -> Optional[discord.Member]:
+    async def _resolve_member(self, guild: interactions.Guild, user_id: int) -> Optional[interactions.Member]:
         member = guild.get_member(user_id)
         if member is None:
             try:
@@ -357,61 +356,61 @@ class Couples(commands.GroupCog, name="couple"):
                 return None
         return member
 
-    @app_commands.command(name="propose", description="Ajukan pasangan kepada seseorang spesial.")
+    @interactions.slash_command(name='propose', description='Ajukan pasangan kepada seseorang spesial.')
     @app_commands.describe(pasangan="Pengguna yang ingin diajak menjadi pasangan", pesan="Pesan manis opsional")
-    async def propose(self, interaction: discord.Interaction, pasangan: discord.User, pesan: Optional[str] = None) -> None:
+    async def propose(self, ctx: interactions.SlashContext, pasangan: interactions.User, pesan: Optional[str] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
         guild_id, bot = repo_info
         repo = bot.couple_repo
-        assert interaction.guild is not None
+        assert ctx.guild is not None
         assert repo is not None
 
         if pasangan.bot:
-            await interaction.response.send_message("Kamu tidak bisa berpasangan dengan bot.", ephemeral=True)
+            await ctx.send("Kamu tidak bisa berpasangan dengan bot.", ephemeral=True)
             return
-        if pasangan.id == interaction.user.id:
-            await interaction.response.send_message("Cinta diri itu penting, tapi pilihlah pasangan lain.", ephemeral=True)
+        if pasangan.id == ctx.author.id:
+            await ctx.send("Cinta diri itu penting, tapi pilihlah pasangan lain.", ephemeral=True)
             return
         if pesan and len(pesan) > MAX_OPTIONAL_MESSAGE:
-            await interaction.response.send_message("Pesan terlalu panjang (maksimal 240 karakter).", ephemeral=True)
+            await ctx.send("Pesan terlalu panjang (maksimal 240 karakter).", ephemeral=True)
             return
 
         # Cek apakah kedua pihak masih kosong
-        if await repo.user_has_active_or_pending(guild_id, interaction.user.id):
-            await interaction.response.send_message("Kamu sudah memiliki pasangan atau lamaran yang belum selesai.", ephemeral=True)
+        if await repo.user_has_active_or_pending(guild_id, ctx.author.id):
+            await ctx.send("Kamu sudah memiliki pasangan atau lamaran yang belum selesai.", ephemeral=True)
             return
         if await repo.user_has_active_or_pending(guild_id, pasangan.id):
-            await interaction.response.send_message(f"{pasangan.mention} sudah memiliki pasangan atau lamaran lain.", ephemeral=True)
+            await ctx.send(f"{pasangan.mention} sudah memiliki pasangan atau lamaran lain.", ephemeral=True)
             return
 
-        existing = await repo.get_pair(guild_id, interaction.user.id, pasangan.id)
+        existing = await repo.get_pair(guild_id, ctx.author.id, pasangan.id)
         if existing and existing.status == "pending":
-            await interaction.response.send_message("Lamaranmu sebelumnya masih menunggu jawaban.", ephemeral=True)
+            await ctx.send("Lamaranmu sebelumnya masih menunggu jawaban.", ephemeral=True)
             return
         if existing and existing.status == "active":
-            await interaction.response.send_message("Kalian sudah resmi menjadi pasangan!", ephemeral=True)
+            await ctx.send("Kalian sudah resmi menjadi pasangan!", ephemeral=True)
             return
 
-        record = await repo.create_proposal(guild_id, interaction.user.id, pasangan.id, pesan)
-        embed = discord.Embed(
+        record = await repo.create_proposal(guild_id, ctx.author.id, pasangan.id, pesan)
+        embed = interactions.Embed(
             title="💝 Lamaran Baru!",
-            description=f"{interaction.user.mention} mengajak {pasangan.mention} menjadi pasangan!",
-            color=discord.Color.magenta(),
+            description=f"{ctx.author.mention} mengajak {pasangan.mention} menjadi pasangan!",
+            color=interactions.Color.magenta(),
         )
         if pesan:
             embed.add_field(name="Pesan", value=pesan, inline=False)
         embed.set_footer(text="Gunakan /couple respond untuk menjawab lamaran.")
 
-        await interaction.response.send_message(
+        await ctx.send(
             embed=embed,
-            allowed_mentions=discord.AllowedMentions(users=[interaction.user, pasangan]),
+            allowed_mentions=discord.AllowedMentions(users=[ctx.author, pasangan]),
         )
 
         try:
             await pasangan.send(
-                f"{interaction.user.display_name} mengajakmu jadi pasangan di server {interaction.guild.name}! Gunakan /couple respond di server untuk menjawab."
+                f"{ctx.author.display_name} mengajakmu jadi pasangan di server {ctx.guild.name}! Gunakan /couple respond di server untuk menjawab."
             )
         except discord.Forbidden:
             pass
@@ -421,50 +420,50 @@ class Couples(commands.GroupCog, name="couple"):
         app_commands.Choice(name="Tolak", value="reject"),
     ])
     @app_commands.describe(keputusan="Jawabanmu atas lamaran", pesan="Pesan opsional untuk pasangan")
-    @app_commands.command(name="respond", description="Jawab lamaran pasangan yang masuk.")
-    async def respond(self, interaction: discord.Interaction, keputusan: app_commands.Choice[str], pesan: Optional[str] = None) -> None:
+    @interactions.slash_command(name='respond', description='Jawab lamaran pasangan yang masuk.')
+    async def respond(self, ctx: interactions.SlashContext, keputusan: app_commands.Choice[str], pesan: Optional[str] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
         guild_id, bot = repo_info
         repo = bot.couple_repo
-        assert interaction.guild is not None
+        assert ctx.guild is not None
         assert repo is not None
 
         if pesan and len(pesan) > MAX_OPTIONAL_MESSAGE:
-            await interaction.response.send_message("Pesan terlalu panjang (maksimal 240 karakter).", ephemeral=True)
+            await ctx.send("Pesan terlalu panjang (maksimal 240 karakter).", ephemeral=True)
             return
 
-        pending = await repo.get_pending_for_target(guild_id, interaction.user.id)
+        pending = await repo.get_pending_for_target(guild_id, ctx.author.id)
         if pending is None:
-            await interaction.response.send_message("Tidak ada lamaran yang perlu kamu jawab saat ini.", ephemeral=True)
+            await ctx.send("Tidak ada lamaran yang perlu kamu jawab saat ini.", ephemeral=True)
             return
 
-        initiator_id = pending.partner_id(interaction.user.id)
-        initiator = await self._resolve_member(interaction.guild, initiator_id) if initiator_id else None
+        initiator_id = pending.partner_id(ctx.author.id)
+        initiator = await self._resolve_member(ctx.guild, initiator_id) if initiator_id else None
 
         if keputusan.value == "accept":
             updated = await repo.accept_proposal(pending.id)
             if updated is None or updated.status != "active":
-                await interaction.response.send_message("Lamaran sudah tidak berlaku.", ephemeral=True)
+                await ctx.send("Lamaran sudah tidak berlaku.", ephemeral=True)
                 return
             now = _now()
             anniversary = updated.anniversary
             ann_display = "hari ini" if not anniversary else anniversary
-            embed = discord.Embed(
+            embed = interactions.Embed(
                 title="💞 Selamat!",
-                description=f"{interaction.user.mention} menerima lamaran {initiator.mention if initiator else '<pasangan>'}!",
-                color=discord.Color.magenta(),
+                description=f"{ctx.author.mention} menerima lamaran {initiator.mention if initiator else '<pasangan>'}!",
+                color=interactions.Color.magenta(),
             )
             embed.add_field(name="Tanggal Anniversary", value=ann_display, inline=True)
             embed.add_field(name="Love Points", value=str(updated.love_points), inline=True)
             embed.set_footer(text="Kirim /couple affection setiap hari untuk menambah love points!")
-            await interaction.response.send_message(
+            await ctx.send(
                 embed=embed,
-                allowed_mentions=discord.AllowedMentions(users=[interaction.user] + ([initiator] if initiator else [])),
+                allowed_mentions=discord.AllowedMentions(users=[ctx.author] + ([initiator] if initiator else [])),
             )
             if initiator:
-                dm_message = f"{interaction.user.display_name} menerima lamaranmu!"
+                dm_message = f"{ctx.author.display_name} menerima lamaranmu!"
                 if pesan:
                     dm_message += f" Pesannya: {pesan}"
                 try:
@@ -472,10 +471,10 @@ class Couples(commands.GroupCog, name="couple"):
                 except discord.Forbidden:
                     pass
         else:
-            updated = await repo.reject_proposal(pending.id, interaction.user.id)
-            await interaction.response.send_message("Lamaran telah ditolak. Semoga kamu nyaman dengan keputusanmu.", ephemeral=True)
+            updated = await repo.reject_proposal(pending.id, ctx.author.id)
+            await ctx.send("Lamaran telah ditolak. Semoga kamu nyaman dengan keputusanmu.", ephemeral=True)
             if initiator:
-                message = f"{interaction.user.display_name} menolak lamarannya."
+                message = f"{ctx.author.display_name} menolak lamarannya."
                 if pesan:
                     message += f" Pesannya: {pesan}"
                 try:
@@ -484,53 +483,53 @@ class Couples(commands.GroupCog, name="couple"):
                     pass
 
     @app_commands.describe(target="Cek status pasangan untuk pengguna tertentu (opsional)")
-    @app_commands.command(name="status", description="Lihat status hubunganmu atau orang lain.")
-    async def status(self, interaction: discord.Interaction, target: Optional[discord.User] = None) -> None:
+    @interactions.slash_command(name='status', description='Lihat status hubunganmu atau orang lain.')
+    async def status(self, ctx: interactions.SlashContext, target: Optional[interactions.User] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
         guild_id, bot = repo_info
         repo = bot.couple_repo
-        assert interaction.guild is not None
+        assert ctx.guild is not None
         assert repo is not None
 
-        user = target or interaction.user
+        user = target or ctx.author
         record = await repo.get_relationship(guild_id, user.id, statuses=("pending", "active"))
         if record is None:
-            await interaction.response.send_message("Belum ada data pasangan untuk pengguna tersebut.", ephemeral=True)
+            await ctx.send("Belum ada data pasangan untuk pengguna tersebut.", ephemeral=True)
             return
         embed = await self._build_status_embed(interaction, user, record)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
     anniversary = app_commands.Group(name="anniversary", description="Kelola tanggal anniversary pasangan")
 
     @anniversary.command(name="set", description="Atur tanggal anniversary (format YYYY-MM-DD)")
-    async def anniversary_set(self, interaction: discord.Interaction, tanggal: str) -> None:
+    async def anniversary_set(self, ctx: interactions.SlashContext, tanggal: str) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
         guild_id, bot = repo_info
         repo = bot.couple_repo
-        assert interaction.guild is not None
+        assert ctx.guild is not None
         assert repo is not None
 
-        record = await repo.get_relationship(guild_id, interaction.user.id, statuses=("active",))
+        record = await repo.get_relationship(guild_id, ctx.author.id, statuses=("active",))
         if record is None:
-            await interaction.response.send_message("Kamu belum memiliki pasangan aktif untuk mengatur anniversary.", ephemeral=True)
+            await ctx.send("Kamu belum memiliki pasangan aktif untuk mengatur anniversary.", ephemeral=True)
             return
 
         try:
             parsed = datetime.fromisoformat(tanggal)
         except ValueError:
-            await interaction.response.send_message("Format tanggal tidak valid. Gunakan YYYY-MM-DD.", ephemeral=True)
+            await ctx.send("Format tanggal tidak valid. Gunakan YYYY-MM-DD.", ephemeral=True)
             return
 
         updated = await repo.update_anniversary(record.id, parsed.date().isoformat())
         if updated is None:
-            await interaction.response.send_message("Gagal memperbarui tanggal anniversary.", ephemeral=True)
+            await ctx.send("Gagal memperbarui tanggal anniversary.", ephemeral=True)
             return
 
-        await interaction.response.send_message(
+        await ctx.send(
             f"Tanggal anniversary diperbarui menjadi {parsed.date().isoformat()}.",
             ephemeral=True,
         )
@@ -538,7 +537,7 @@ class Couples(commands.GroupCog, name="couple"):
     profile = app_commands.Group(name="profile", description="Atur profil cinta kalian")
 
     @profile.command(name="view", description="Lihat profil romantis pasanganmu.")
-    async def profile_view(self, interaction: discord.Interaction) -> None:
+    async def profile_view(self, ctx: interactions.SlashContext) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
@@ -546,9 +545,9 @@ class Couples(commands.GroupCog, name="couple"):
         record = await self._get_active_record(guild_id, interaction)
         if record is None:
             return
-        embed = await self._build_status_embed(interaction, interaction.user, record)
+        embed = await self._build_status_embed(interaction, ctx.author, record)
         embed.title = "Profil Cinta"
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
     @profile.command(name="edit", description="Perbarui profil cinta kalian.")
     @app_commands.describe(
@@ -560,7 +559,7 @@ class Couples(commands.GroupCog, name="couple"):
     )
     async def profile_edit(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         title: Optional[str] = None,
         theme_color: Optional[str] = None,
         love_song: Optional[str] = None,
@@ -580,47 +579,47 @@ class Couples(commands.GroupCog, name="couple"):
         updates: dict[str, object] = {}
         if title is not None:
             if len(title) > 80:
-                await interaction.response.send_message("Judul terlalu panjang (maksimal 80 karakter).", ephemeral=True)
+                await ctx.send("Judul terlalu panjang (maksimal 80 karakter).", ephemeral=True)
                 return
             updates["title"] = title
         if theme_color is not None:
             normalized = _normalize_hex_color(theme_color)
             if normalized is None:
-                await interaction.response.send_message("Warna tidak valid. Gunakan format hex seperti #FF6699.", ephemeral=True)
+                await ctx.send("Warna tidak valid. Gunakan format hex seperti #FF6699.", ephemeral=True)
                 return
             updates["theme_color"] = normalized
         if love_song is not None:
             if len(love_song) > 200:
-                await interaction.response.send_message("Lagu favorit terlalu panjang (maksimal 200 karakter).", ephemeral=True)
+                await ctx.send("Lagu favorit terlalu panjang (maksimal 200 karakter).", ephemeral=True)
                 return
             updates["love_song"] = love_song
         if bio is not None:
             if len(bio) > MAX_PROFILE_BIO:
-                await interaction.response.send_message("Bio terlalu panjang (maksimal 500 karakter).", ephemeral=True)
+                await ctx.send("Bio terlalu panjang (maksimal 500 karakter).", ephemeral=True)
                 return
             updates["bio"] = bio
         if mood is not None:
             if len(mood) > 50:
-                await interaction.response.send_message("Mood terlalu panjang (maksimal 50 karakter).", ephemeral=True)
+                await ctx.send("Mood terlalu panjang (maksimal 50 karakter).", ephemeral=True)
                 return
             updates["current_mood"] = mood
 
         if not updates:
-            await interaction.response.send_message("Tidak ada perubahan yang diberikan.", ephemeral=True)
+            await ctx.send("Tidak ada perubahan yang diberikan.", ephemeral=True)
             return
 
         profile = await repo.update_profile(record.id, **updates)
-        await interaction.response.send_message("Profil cinta berhasil diperbarui!", ephemeral=True)
+        await ctx.send("Profil cinta berhasil diperbarui!", ephemeral=True)
 
-        embed = await self._build_status_embed(interaction, interaction.user, record)
+        embed = await self._build_status_embed(interaction, ctx.author, record)
         embed.title = "Profil Cinta Terbaru"
         embed.colour = _color_from_hex(profile.theme_color)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
     memory = app_commands.Group(name="memory", description="Kelola jurnal memori kalian")
 
     @memory.command(name="add", description="Tambahkan memori romantis ke jurnal.")
-    async def memory_add(self, interaction: discord.Interaction, judul: str, cerita: Optional[str] = None) -> None:
+    async def memory_add(self, ctx: interactions.SlashContext, judul: str, cerita: Optional[str] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
@@ -632,62 +631,62 @@ class Couples(commands.GroupCog, name="couple"):
             return
 
         if len(judul) > 80:
-            await interaction.response.send_message("Judul memori terlalu panjang (maksimal 80 karakter).", ephemeral=True)
+            await ctx.send("Judul memori terlalu panjang (maksimal 80 karakter).", ephemeral=True)
             return
         if cerita and len(cerita) > MAX_MEMORY_BODY:
-            await interaction.response.send_message("Cerita terlalu panjang (maksimal 600 karakter).", ephemeral=True)
+            await ctx.send("Cerita terlalu panjang (maksimal 600 karakter).", ephemeral=True)
             return
         total_memories = await repo.count_memories(record.id)
         if total_memories >= MAX_MEMORIES:
-            await interaction.response.send_message("Album memori penuh. Hapus memori lama sebelum menambah yang baru.", ephemeral=True)
+            await ctx.send("Album memori penuh. Hapus memori lama sebelum menambah yang baru.", ephemeral=True)
             return
 
-        memory_entry = await repo.add_memory(record.id, judul, cerita, interaction.user.id)
-        await interaction.response.send_message("Memori baru tersimpan!", ephemeral=True)
+        memory_entry = await repo.add_memory(record.id, judul, cerita, ctx.author.id)
+        await ctx.send("Memori baru tersimpan!", ephemeral=True)
 
         unlocked = await self._check_milestones(record, total_memories=total_memories + 1)
         if unlocked:
             lines = [f"🏆 {title}\n→ {desc}" for title, desc in unlocked]
-            await interaction.followup.send("\n".join(lines), ephemeral=True)
+            await ctx.send("\n".join(lines), ephemeral=True)
 
-        partner_id = record.partner_id(interaction.user.id)
+        partner_id = record.partner_id(ctx.author.id)
         if partner_id:
-            partner = await self._resolve_member(interaction.guild, partner_id) if interaction.guild else None
+            partner = await self._resolve_member(ctx.guild, partner_id) if ctx.guild else None
             if partner:
                 try:
                     preview = memory_entry.description or "Tanpa deskripsi tambahan"
                     await partner.send(
-                        f"{interaction.user.display_name} menambahkan memori baru: **{memory_entry.title}**\n{preview[:200]}"
+                        f"{ctx.author.display_name} menambahkan memori baru: **{memory_entry.title}**\n{preview[:200]}"
                     )
                 except discord.Forbidden:
                     pass
 
     @memory.command(name="list", description="Tampilkan memori terbaru kalian.")
-    async def memory_list(self, interaction: discord.Interaction, jumlah: app_commands.Range[int, 1, 10] = 5) -> None:
+    async def memory_list(self, ctx: interactions.SlashContext, jumlah: app_commands.Range[int, 1, 10] = 5) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
         guild_id, _ = repo_info
         repo = self.bot.couple_repo
         assert repo is not None
-        record = await repo.get_relationship(guild_id, interaction.user.id, statuses=("active", "ended"))
+        record = await repo.get_relationship(guild_id, ctx.author.id, statuses=("active", "ended"))
         if record is None:
-            await interaction.response.send_message("Belum ada memori yang bisa ditampilkan.", ephemeral=True)
+            await ctx.send("Belum ada memori yang bisa ditampilkan.", ephemeral=True)
             return
 
         memories = await repo.list_memories(record.id, limit=jumlah)
         if not memories:
-            await interaction.response.send_message("Album memori masih kosong.", ephemeral=True)
+            await ctx.send("Album memori masih kosong.", ephemeral=True)
             return
 
-        embed = discord.Embed(title="Memori Romantis", color=discord.Color.gold())
+        embed = interactions.Embed(title="Memori Romantis", color=interactions.Color.gold())
         for mem in memories:
             value = mem.description or "(Tanpa deskripsi)"
             embed.add_field(name=f"#{mem.id} — {mem.title}", value=value[:1024], inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
     @memory.command(name="delete", description="Hapus memori berdasarkan ID.")
-    async def memory_delete(self, interaction: discord.Interaction, memori_id: int) -> None:
+    async def memory_delete(self, ctx: interactions.SlashContext, memori_id: int) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
@@ -700,27 +699,27 @@ class Couples(commands.GroupCog, name="couple"):
 
         success = await repo.delete_memory(record.id, memori_id)
         if success:
-            await interaction.response.send_message("Memori berhasil dihapus.", ephemeral=True)
+            await ctx.send("Memori berhasil dihapus.", ephemeral=True)
         else:
-            await interaction.response.send_message("Memori tidak ditemukan.", ephemeral=True)
+            await ctx.send("Memori tidak ditemukan.", ephemeral=True)
 
-    @app_commands.command(name="affection", description="Tambahkan love points harian bersama pasangan.")
-    async def affection(self, interaction: discord.Interaction) -> None:
+    @interactions.slash_command(name='affection', description='Tambahkan love points harian bersama pasangan.')
+    async def affection(self, ctx: interactions.SlashContext) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
         guild_id, bot = repo_info
         repo = bot.couple_repo
-        assert interaction.guild is not None
+        assert ctx.guild is not None
         assert repo is not None
 
-        record = await repo.get_relationship(guild_id, interaction.user.id, statuses=("active",))
+        record = await repo.get_relationship(guild_id, ctx.author.id, statuses=("active",))
         if record is None:
-            await interaction.response.send_message("Kamu belum memiliki pasangan aktif.", ephemeral=True)
+            await ctx.send("Kamu belum memiliki pasangan aktif.", ephemeral=True)
             return
 
         now = _now()
-        last_str = record.last_affection_for(interaction.user.id)
+        last_str = record.last_affection_for(ctx.author.id)
         if last_str:
             try:
                 last_dt = datetime.fromisoformat(last_str)
@@ -728,13 +727,13 @@ class Couples(commands.GroupCog, name="couple"):
                 last_dt = None
             if last_dt and now - last_dt < LOVE_COOLDOWN:
                 remaining = LOVE_COOLDOWN - (now - last_dt)
-                await interaction.response.send_message(
+                await ctx.send(
                     f"Kamu bisa mengirim love point lagi dalam {_format_timedelta(remaining)}.",
                     ephemeral=True,
                 )
                 return
 
-        partner_id = record.partner_id(interaction.user.id)
+        partner_id = record.partner_id(ctx.author.id)
         partner_last = record.last_affection_for(partner_id or 0) if partner_id else None
         base_points = random.randint(18, 40)
         bonus = 0
@@ -749,9 +748,9 @@ class Couples(commands.GroupCog, name="couple"):
         total = base_points + bonus
         updated = await repo.add_love_points(record.id, total)
         if updated is None:
-            await interaction.response.send_message("Gagal memperbarui love points.", ephemeral=True)
+            await ctx.send("Gagal memperbarui love points.", ephemeral=True)
             return
-        await repo.update_last_affection(updated, interaction.user.id, now.isoformat())
+        await repo.update_last_affection(updated, ctx.author.id, now.isoformat())
 
         description = f"Love points bertambah **{total}**"
         if bonus:
@@ -759,78 +758,78 @@ class Couples(commands.GroupCog, name="couple"):
         description += f". Total sekarang **{updated.love_points}**."
         if partner_last and bonus:
             description += " Kamu mendapat bonus karena kompak dengan pasangan!"
-        await interaction.response.send_message(description, ephemeral=True)
+        await ctx.send(description, ephemeral=True)
 
         unlocked = await self._check_milestones(updated)
         if unlocked:
             lines = [f"🏆 {title}\n→ {desc}" for title, desc in unlocked]
-            await interaction.followup.send("\n".join(lines), ephemeral=True)
+            await ctx.send("\n".join(lines), ephemeral=True)
 
-    @app_commands.command(name="leaderboard", description="Lihat pasangan paling romantis di server.")
-    async def leaderboard(self, interaction: discord.Interaction) -> None:
+    @interactions.slash_command(name='leaderboard', description='Lihat pasangan paling romantis di server.')
+    async def leaderboard(self, ctx: interactions.SlashContext) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
         guild_id, bot = repo_info
         repo = bot.couple_repo
-        assert interaction.guild is not None
+        assert ctx.guild is not None
         assert repo is not None
 
         records = await repo.list_leaderboard(guild_id, limit=10)
         if not records:
-            await interaction.response.send_message("Belum ada pasangan aktif di server ini.")
+            await ctx.send("Belum ada pasangan aktif di server ini.")
             return
 
         lines: list[str] = []
         for idx, record in enumerate(records, start=1):
-            one = await self._resolve_member(interaction.guild, record.member_one_id)
-            two = await self._resolve_member(interaction.guild, record.member_two_id)
+            one = await self._resolve_member(ctx.guild, record.member_one_id)
+            two = await self._resolve_member(ctx.guild, record.member_two_id)
             name_one = one.mention if one else f"<@{record.member_one_id}>"
             name_two = two.mention if two else f"<@{record.member_two_id}>"
             crown = "👑 " if idx == 1 else ""
             lines.append(f"{crown}**{idx}.** {name_one} ❤️ {name_two} — {record.love_points} LP")
 
-        embed = discord.Embed(title="Papan Cinta Server", description="\n".join(lines), color=discord.Color.red())
-        await interaction.response.send_message(embed=embed)
+        embed = interactions.Embed(title="Papan Cinta Server", description="\n".join(lines), color=interactions.Color.red())
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="breakup", description="Akhiri hubungan dengan pasangan saat ini.")
+    @interactions.slash_command(name='breakup', description='Akhiri hubungan dengan pasangan saat ini.')
     @app_commands.describe(alasan="Alasan opsional untuk pasanganmu")
-    async def breakup(self, interaction: discord.Interaction, alasan: Optional[str] = None) -> None:
+    async def breakup(self, ctx: interactions.SlashContext, alasan: Optional[str] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
         guild_id, bot = repo_info
         repo = bot.couple_repo
-        assert interaction.guild is not None
+        assert ctx.guild is not None
         assert repo is not None
 
         if alasan and len(alasan) > MAX_OPTIONAL_MESSAGE:
-            await interaction.response.send_message("Alasan terlalu panjang (maksimal 240 karakter).", ephemeral=True)
+            await ctx.send("Alasan terlalu panjang (maksimal 240 karakter).", ephemeral=True)
             return
 
-        record = await repo.get_relationship(guild_id, interaction.user.id, statuses=("active",))
+        record = await repo.get_relationship(guild_id, ctx.author.id, statuses=("active",))
         if record is None:
-            await interaction.response.send_message("Tidak ada hubungan aktif yang bisa diakhiri.", ephemeral=True)
+            await ctx.send("Tidak ada hubungan aktif yang bisa diakhiri.", ephemeral=True)
             return
 
-        updated = await repo.end_relationship(record.id, interaction.user.id)
+        updated = await repo.end_relationship(record.id, ctx.author.id)
         if updated is None:
-            await interaction.response.send_message("Terjadi kesalahan saat mengakhiri hubungan.", ephemeral=True)
+            await ctx.send("Terjadi kesalahan saat mengakhiri hubungan.", ephemeral=True)
             return
 
-        partner_id = record.partner_id(interaction.user.id)
-        partner = await self._resolve_member(interaction.guild, partner_id) if partner_id else None
-        await interaction.response.send_message("Hubungan telah diakhiri. Semoga keputusanmu membawa kebaikan.", ephemeral=True)
+        partner_id = record.partner_id(ctx.author.id)
+        partner = await self._resolve_member(ctx.guild, partner_id) if partner_id else None
+        await ctx.send("Hubungan telah diakhiri. Semoga keputusanmu membawa kebaikan.", ephemeral=True)
 
         if partner:
             reason = f" Pesan darinya: {alasan}" if alasan else ""
             try:
                 await partner.send(
-                    f"{interaction.user.display_name} mengakhiri hubungan kalian di server {interaction.guild.name}.{reason}"
+                    f"{ctx.author.display_name} mengakhiri hubungan kalian di server {ctx.guild.name}.{reason}"
                 )
             except discord.Forbidden:
                 pass
 
 
-async def setup(bot: ForUS) -> None:
-    await bot.add_cog(Couples(bot))
+def setup(bot: ForUS) -> None:
+    Couples(bot)

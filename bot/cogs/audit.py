@@ -3,9 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import TYPE_CHECKING, Any
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+import interactions
 
 if TYPE_CHECKING:
     from bot.main import ForUS
@@ -39,30 +37,31 @@ def _truncate(value: str | None, limit: int = 180) -> str:
 
 
 @app_commands.default_permissions(manage_guild=True)
-class Audit(commands.GroupCog, name="audit"):
+class Audit(interactions.Extension):
+    # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:
         super().__init__()
         self.bot = bot
 
-    async def _ensure_repo(self, interaction: discord.Interaction) -> tuple[int | None, Any]:
-        guild = interaction.guild
+    async def _ensure_repo(self, ctx: interactions.SlashContext) -> tuple[int | None, Any]:
+        guild = ctx.guild
         if guild is None:
-            await interaction.response.send_message("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
+            await ctx.send("Perintah ini hanya dapat digunakan dalam server.", ephemeral=True)
             return None, None
         repo = self.bot.audit_repo
         if repo is None:
-            await interaction.response.send_message("Repositori audit belum siap.", ephemeral=True)
+            await ctx.send("Repositori audit belum siap.", ephemeral=True)
             return None, None
         return guild.id, repo
 
-    @app_commands.command(name="recent", description="Tampilkan catatan audit internal terbaru.")
+    @interactions.slash_command(name='recent', description='Tampilkan catatan audit internal terbaru.')
     @app_commands.describe(
         jumlah="Jumlah catatan terbaru yang diambil (1-20)",
         aksi="Filter prefix aksi. Kosongkan untuk menampilkan semua.",
     )
     async def recent(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         jumlah: app_commands.Range[int, 1, 20] = 10,
         aksi: str | None = None,
     ) -> None:
@@ -72,10 +71,10 @@ class Audit(commands.GroupCog, name="audit"):
 
         entries = await repo.recent_entries(guild_id, limit=int(jumlah), action_prefix=aksi.strip() if aksi else None)
         if not entries:
-            await interaction.response.send_message("Belum ada log audit yang tersimpan dengan filter tersebut.", ephemeral=True)
+            await ctx.send("Belum ada log audit yang tersimpan dengan filter tersebut.", ephemeral=True)
             return
 
-        embed = discord.Embed(title="Log Audit Terbaru", color=discord.Color.dark_gold())
+        embed = interactions.Embed(title="Log Audit Terbaru", color=interactions.Color.dark_gold())
         if aksi:
             embed.description = f"Filter aksi: `{aksi.strip()}`"
 
@@ -103,15 +102,15 @@ class Audit(commands.GroupCog, name="audit"):
             embed.add_field(name=field_name, value="\n".join(field_value_parts), inline=False)
 
         embed.set_footer(text="Data audit disimpan secara terpisah dari Audit Log Discord sebagai histori internal bot.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
     @recent.autocomplete("aksi")
     async def recent_action_autocomplete(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         current: str,
     ) -> list[app_commands.Choice[str]]:
-        guild = interaction.guild
+        guild = ctx.guild
         repo = self.bot.audit_repo
         if guild is None or repo is None:
             return []
@@ -124,14 +123,14 @@ class Audit(commands.GroupCog, name="audit"):
             choices.append(app_commands.Choice(name=action, value=action))
         return choices[:25]
 
-    @app_commands.command(name="stats", description="Ringkasan frekuensi aksi audit dalam periode tertentu.")
+    @interactions.slash_command(name='stats', description='Ringkasan frekuensi aksi audit dalam periode tertentu.')
     @app_commands.describe(
         hari="Jumlah hari terakhir yang dihitung (1-30)",
         batas="Jumlah aksi teratas yang ditampilkan (1-15)",
     )
     async def stats(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         hari: app_commands.Range[int, 1, 30] = 7,
         batas: app_commands.Range[int, 1, 15] = 10,
     ) -> None:
@@ -144,7 +143,7 @@ class Audit(commands.GroupCog, name="audit"):
 
         actions = await repo.action_summary(guild_id, limit=int(batas), since=since_iso)
         if not actions:
-            await interaction.response.send_message(
+            await ctx.send(
                 "Belum ada aktivitas audit pada rentang waktu tersebut.",
                 ephemeral=True,
             )
@@ -153,7 +152,7 @@ class Audit(commands.GroupCog, name="audit"):
         total_entries = sum(total for _, total in actions)
         actors = await repo.actor_summary(guild_id, limit=5, since=since_iso)
 
-        embed = discord.Embed(title="Ringkasan Audit", color=discord.Color.orange())
+        embed = interactions.Embed(title="Ringkasan Audit", color=interactions.Color.orange())
         embed.description = (
             f"Periode sejak {discord.utils.format_dt(since_dt, style='F')} "
             f"({discord.utils.format_dt(since_dt, style='R')})"
@@ -170,8 +169,8 @@ class Audit(commands.GroupCog, name="audit"):
 
         embed.add_field(name="Total entri", value=str(total_entries), inline=True)
         embed.set_footer(text="Audit internal membantu melacak tindakan bot seperti automasi dan jadwal.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed, ephemeral=True)
 
 
-async def setup(bot: ForUS) -> None:
-    await bot.add_cog(Audit(bot))
+def setup(bot: ForUS) -> None:
+    Audit(bot)

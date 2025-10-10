@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+import interactions
 
 from bot.services.activity_logger import ACTIVITY_LOG_CATEGORIES, ActivityLogger
 
@@ -28,12 +26,12 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         self.logger = ActivityLogger(bot)
 
     async def _ensure_context(
-        self, interaction: discord.Interaction
-    ) -> Optional[tuple[discord.Guild, "GuildSettingsRepository"]]:
-        guild = interaction.guild
+        self, ctx: interactions.SlashContext
+    ) -> Optional[tuple[interactions.Guild, "GuildSettingsRepository"]]:
+        guild = ctx.guild
         if guild is None:
             if not interaction.response.is_done():
-                await interaction.response.send_message(
+                await ctx.send(
                     "Perintah ini hanya bisa digunakan di dalam server.",
                     ephemeral=True,
                 )
@@ -42,7 +40,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         repo = self.bot.guild_repo
         if repo is None:
             if not interaction.response.is_done():
-                await interaction.response.send_message(
+                await ctx.send(
                     "Repositori guild belum siap. Silakan coba lagi nanti.",
                     ephemeral=True,
                 )
@@ -52,18 +50,18 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
 
     async def _send_ephemeral(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         message: Optional[str] = None,
         *,
-        embed: Optional[discord.Embed] = None,
+        embed: Optional[interactions.Embed] = None,
     ) -> None:
         if interaction.response.is_done():
-            await interaction.followup.send(content=message, embed=embed, ephemeral=True)
+            await ctx.send(content=message, embed=embed, ephemeral=True)
         else:
-            await interaction.response.send_message(content=message, embed=embed, ephemeral=True)
+            await ctx.send(content=message, embed=embed, ephemeral=True)
 
-    @app_commands.command(name="status", description="Tampilkan konfigurasi activity log.")
-    async def status(self, interaction: discord.Interaction) -> None:
+    @interactions.slash_command(name='status', description='Tampilkan konfigurasi activity log.')
+    async def status(self, ctx: interactions.SlashContext) -> None:
         context = await self._ensure_context(interaction)
         if context is None:
             return
@@ -74,14 +72,14 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         channel_value = "Belum disetel"
         if config.channel_id:
             channel_obj = guild.get_channel(config.channel_id)
-            if isinstance(channel_obj, discord.TextChannel):
+            if isinstance(channel_obj, interactions.GuildText):
                 channel_value = channel_obj.mention
             else:
                 channel_value = f"<#{config.channel_id}>"
 
-        embed = discord.Embed(
+        embed = interactions.Embed(
             title="Konfigurasi Activity Log",
-            color=discord.Color.blurple(),
+            color=interactions.Color.blurple(),
         )
         embed.add_field(name="Status", value="Aktif" if config.enabled else "Nonaktif", inline=False)
         embed.add_field(name="Channel", value=channel_value, inline=False)
@@ -110,8 +108,8 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
     @app_commands.describe(channel="Channel teks yang akan menerima activity log. Kosongkan untuk menghapus pengaturan.")
     async def set_channel(
         self,
-        interaction: discord.Interaction,
-        channel: Optional[discord.TextChannel] = None,
+        ctx: interactions.SlashContext,
+        channel: Optional[interactions.GuildText] = None,
     ) -> None:
         context = await self._ensure_context(interaction)
         if context is None:
@@ -130,9 +128,9 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
 
         await self._send_ephemeral(interaction, message)
 
-    @app_commands.command(name="toggle", description="Aktifkan atau nonaktifkan activity log.")
+    @interactions.slash_command(name='toggle', description='Aktifkan atau nonaktifkan activity log.')
     @app_commands.describe(status="Pilih 'True' untuk mengaktifkan atau 'False' untuk menonaktifkan.")
-    async def toggle(self, interaction: discord.Interaction, status: bool) -> None:
+    async def toggle(self, ctx: interactions.SlashContext, status: bool) -> None:
         context = await self._ensure_context(interaction)
         if context is None:
             return
@@ -144,8 +142,8 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         message = "Activity log berhasil diaktifkan." if status else "Activity log dinonaktifkan."
         await self._send_ephemeral(interaction, message)
 
-    @app_commands.command(name="reset", description="Reset konfigurasi activity log ke nilai awal.")
-    async def reset(self, interaction: discord.Interaction) -> None:
+    @interactions.slash_command(name='reset', description='Reset konfigurasi activity log ke nilai awal.')
+    async def reset(self, ctx: interactions.SlashContext) -> None:
         context = await self._ensure_context(interaction)
         if context is None:
             return
@@ -164,12 +162,12 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             "Konfigurasi activity log telah direset. Semua kategori aktif dan channel khusus dikosongkan.",
         )
 
-    @app_commands.command(name="category", description="Aktifkan atau nonaktifkan kategori tertentu.")
+    @interactions.slash_command(name='category', description='Aktifkan atau nonaktifkan kategori tertentu.')
     @app_commands.describe(category="Kategori log yang ingin diatur.", enabled="Aktifkan? Pilih False untuk menonaktifkan.")
     @app_commands.choices(category=CATEGORY_CHOICES)
     async def category(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         category: app_commands.Choice[str],
         enabled: bool,
     ) -> None:
@@ -207,17 +205,17 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
 
     async def _resolve_log_channel(
         self,
-        guild: discord.Guild,
+        guild: interactions.Guild,
         *,
         compare_channel_id: Optional[int] = None,
-    ) -> tuple[Optional[discord.TextChannel], bool]:
+    ) -> tuple[Optional[interactions.GuildText], bool]:
         channel = await self.logger.get_log_channel(guild)
         if channel is None:
             return None, False
         is_same = compare_channel_id == channel.id if compare_channel_id is not None else False
         return channel, is_same
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_message(self, message: discord.Message) -> None:
         guild = message.guild
         if guild is None:
@@ -229,7 +227,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_message_sent(message, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
         guild = after.guild
         if guild is None:
@@ -239,7 +237,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_message_edit(before, after, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_message_delete(self, message: discord.Message) -> None:
         guild = message.guild
         if guild is None:
@@ -249,28 +247,28 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_message_delete(message, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_bulk_message_delete(self, messages: list[discord.Message]) -> None:
         if not messages:
             return
         guild = messages[0].guild
         channel = messages[0].channel
-        if guild is None or not isinstance(channel, discord.TextChannel):
+        if guild is None or not isinstance(channel, interactions.GuildText):
             return
         log_channel, is_log_channel = await self._resolve_log_channel(guild, compare_channel_id=channel.id)
         if log_channel is None or is_log_channel:
             return
         await self.logger.log_bulk_delete(messages, guild, channel, channel=log_channel)
 
-    @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member) -> None:
+    @interactions.listen()
+    async def on_member_join(self, member: interactions.Member) -> None:
         log_channel, _ = await self._resolve_log_channel(member.guild)
         if log_channel is None:
             return
         await self.logger.log_member_join(member, channel=log_channel)
 
-    @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member | discord.User) -> None:
+    @interactions.listen()
+    async def on_member_remove(self, member: interactions.Member | interactions.User) -> None:
         guild = getattr(member, "guild", None)
         if guild is None:
             return
@@ -279,17 +277,17 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_member_remove(member, guild, channel=log_channel)
 
-    @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+    @interactions.listen()
+    async def on_member_update(self, before: interactions.Member, after: interactions.Member) -> None:
         log_channel, _ = await self._resolve_log_channel(after.guild)
         if log_channel is None:
             return
         await self.logger.log_member_update(before, after, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_voice_state_update(
         self,
-        member: discord.Member,
+        member: interactions.Member,
         before: discord.VoiceState,
         after: discord.VoiceState,
     ) -> None:
@@ -298,7 +296,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_voice_state(member, before, after, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
         guild = channel.guild
         log_channel, _ = await self._resolve_log_channel(guild)
@@ -306,7 +304,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_channel_event(guild, action="Dibuat", channel_obj=channel, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
         guild = channel.guild
         log_channel, is_log_channel = await self._resolve_log_channel(guild, compare_channel_id=channel.id)
@@ -314,7 +312,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             await self.logger.log_channel_event(guild, action="Dihapus", channel_obj=channel, channel=log_channel)
         await self.logger.invalidate_cache(guild.id)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_guild_channel_update(
         self,
         before: discord.abc.GuildChannel,
@@ -334,7 +332,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
                 channel=log_channel,
             )
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_guild_role_create(self, role: discord.Role) -> None:
         guild = role.guild
         log_channel, _ = await self._resolve_log_channel(guild)
@@ -342,7 +340,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_role_event(guild, action="Dibuat", role=role, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_guild_role_delete(self, role: discord.Role) -> None:
         guild = role.guild
         log_channel, _ = await self._resolve_log_channel(guild)
@@ -350,7 +348,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_role_event(guild, action="Dihapus", role=role, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_guild_role_update(self, before: discord.Role, after: discord.Role) -> None:
         guild = after.guild
         log_channel, _ = await self._resolve_log_channel(guild)
@@ -366,7 +364,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
                 channel=log_channel,
             )
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_thread_create(self, thread: discord.Thread) -> None:
         guild = thread.guild
         if guild is None:
@@ -376,7 +374,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_thread_event(thread, action="Dibuat", channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_thread_delete(self, thread: discord.Thread) -> None:
         guild = thread.guild
         if guild is None:
@@ -386,8 +384,8 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_thread_event(thread, action="Dihapus", channel=log_channel)
 
-    @commands.Cog.listener()
-    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User | discord.Member) -> None:
+    @interactions.listen()
+    async def on_reaction_add(self, reaction: discord.Reaction, user: interactions.User | interactions.Member) -> None:
         message = reaction.message
         guild = message.guild
         if guild is None:
@@ -397,8 +395,8 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_reaction(reaction, user, added=True, channel=log_channel)
 
-    @commands.Cog.listener()
-    async def on_reaction_remove(self, reaction: discord.Reaction, user: discord.User | discord.Member) -> None:
+    @interactions.listen()
+    async def on_reaction_remove(self, reaction: discord.Reaction, user: interactions.User | interactions.Member) -> None:
         message = reaction.message
         guild = message.guild
         if guild is None:
@@ -408,28 +406,28 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_reaction(reaction, user, added=False, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_app_command_completion(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         command: app_commands.Command,
     ) -> None:
-        if interaction.guild is None:
+        if ctx.guild is None:
             return
-        log_channel, _ = await self._resolve_log_channel(interaction.guild)
+        log_channel, _ = await self._resolve_log_channel(ctx.guild)
         if log_channel is None:
             return
         await self.logger.log_app_command(interaction, command, succeeded=True, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_app_command_error(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         error: app_commands.AppCommandError,
     ) -> None:
-        if interaction.guild is None:
+        if ctx.guild is None:
             return
-        log_channel, _ = await self._resolve_log_channel(interaction.guild)
+        log_channel, _ = await self._resolve_log_channel(ctx.guild)
         if log_channel is None:
             return
         await self.logger.log_app_command(
@@ -440,7 +438,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             channel=log_channel,
         )
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_command_completion(self, ctx: commands.Context) -> None:
         guild = ctx.guild
         if guild is None:
@@ -450,7 +448,7 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
             return
         await self.logger.log_prefix_command(ctx, succeeded=True, channel=log_channel)
 
-    @commands.Cog.listener()
+    @interactions.listen()
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         guild = ctx.guild
         if guild is None:
@@ -461,5 +459,5 @@ class ActivityLog(commands.GroupCog, name="activitylog", description="Kelola act
         await self.logger.log_prefix_command(ctx, succeeded=False, error=error, channel=log_channel)
 
 
-async def setup(bot: ForUS) -> None:
-    await bot.add_cog(ActivityLog(bot))
+def setup(bot: ForUS) -> None:
+    ActivityLog(bot)

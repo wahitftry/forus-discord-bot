@@ -4,9 +4,7 @@ import random
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+import interactions
 
 if TYPE_CHECKING:
     from bot.main import ForUS
@@ -17,28 +15,29 @@ def _now_iso() -> str:
 
 
 @app_commands.default_permissions(manage_guild=True)
-class ShopAdmin(commands.GroupCog, name="shopadmin"):
+class ShopAdmin(interactions.Extension):
+    # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:
         super().__init__()
         self.bot = bot
 
-    @app_commands.command(name="add", description="Tambah item ke shop")
+    @interactions.slash_command(name='add', description='Tambah item ke shop')
     async def add_item(
         self,
-        interaction: discord.Interaction,
+        ctx: interactions.SlashContext,
         nama: str,
         harga: app_commands.Range[int, 0, 1_000_000],
         deskripsi: str,
         role_reward: discord.Role | None = None,
     ) -> None:
-        if self.bot.shop_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+        if self.bot.shop_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        await self.bot.shop_repo.add_item(interaction.guild.id, nama, harga, deskripsi, role_reward.id if role_reward else None)
-        await interaction.response.send_message(f"Item {nama} ditambahkan dengan harga {harga} koin.", ephemeral=True)
+        await self.bot.shop_repo.add_item(ctx.guild.id, nama, harga, deskripsi, role_reward.id if role_reward else None)
+        await ctx.send(f"Item {nama} ditambahkan dengan harga {harga} koin.", ephemeral=True)
 
 
-class Economy(commands.Cog):
+class Economy(interactions.Extension):
     def __init__(self, bot: ForUS) -> None:
         self.bot = bot
         self._shop_admin: ShopAdmin | None = None
@@ -47,88 +46,88 @@ class Economy(commands.Cog):
         self._shop_admin = ShopAdmin(self.bot)
         await self.bot.add_cog(self._shop_admin)
 
-    async def cog_unload(self) -> None:
+    def drop(self) -> None:
         await self.bot.remove_cog("ShopAdmin")
         self._shop_admin = None
 
-    @app_commands.command(name="balance", description="Cek saldo ekonomi Anda")
-    async def balance(self, interaction: discord.Interaction, pengguna: discord.User | None = None) -> None:
-        if self.bot.economy_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(name='balance', description='Cek saldo ekonomi Anda')
+    async def balance(self, ctx: interactions.SlashContext, pengguna: interactions.User | None = None) -> None:
+        if self.bot.economy_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        target = pengguna or interaction.user
-        saldo = await self.bot.economy_repo.get_balance(interaction.guild.id, target.id)
-        await interaction.response.send_message(f"Saldo {target.mention}: {saldo:,} koin.")
+        target = pengguna or ctx.author
+        saldo = await self.bot.economy_repo.get_balance(ctx.guild.id, target.id)
+        await ctx.send(f"Saldo {target.mention}: {saldo:,} koin.")
 
-    @app_commands.command(name="daily", description="Klaim hadiah harian.")
-    async def daily(self, interaction: discord.Interaction) -> None:
-        if self.bot.economy_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(name='daily', description='Klaim hadiah harian.')
+    async def daily(self, ctx: interactions.SlashContext) -> None:
+        if self.bot.economy_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        last_daily = await self.bot.economy_repo.get_daily_timestamp(interaction.guild.id, interaction.user.id)
+        last_daily = await self.bot.economy_repo.get_daily_timestamp(ctx.guild.id, ctx.author.id)
         now = datetime.now(timezone.utc)
         if last_daily:
             last_time = datetime.fromisoformat(last_daily)
             if now - last_time < timedelta(hours=20):
                 remaining = timedelta(hours=20) - (now - last_time)
-                await interaction.response.send_message(
+                await ctx.send(
                     f"Tunggu {remaining.seconds // 3600} jam {remaining.seconds % 3600 // 60} menit lagi untuk klaim harian.",
                     ephemeral=True,
                 )
                 return
         amount = random.randint(150, 400)
-        new_balance = await self.bot.economy_repo.update_balance(interaction.guild.id, interaction.user.id, amount)
-        await self.bot.economy_repo.set_daily_timestamp(interaction.guild.id, interaction.user.id, _now_iso())
-        await interaction.response.send_message(
+        new_balance = await self.bot.economy_repo.update_balance(ctx.guild.id, ctx.author.id, amount)
+        await self.bot.economy_repo.set_daily_timestamp(ctx.guild.id, ctx.author.id, _now_iso())
+        await ctx.send(
             f"Berhasil klaim {amount} koin! Saldo Anda sekarang {new_balance}.",
             ephemeral=True,
         )
 
-    @app_commands.command(name="transfer", description="Transfer saldo ke pengguna lain.")
+    @interactions.slash_command(name='transfer', description='Transfer saldo ke pengguna lain.')
     async def transfer(
         self,
-        interaction: discord.Interaction,
-        pengguna: discord.User,
+        ctx: interactions.SlashContext,
+        pengguna: interactions.User,
         jumlah: app_commands.Range[int, 1, 1_000_000],
     ) -> None:
-        if self.bot.economy_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+        if self.bot.economy_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        if pengguna.id == interaction.user.id:
-            await interaction.response.send_message("Tidak dapat transfer ke diri sendiri.", ephemeral=True)
+        if pengguna.id == ctx.author.id:
+            await ctx.send("Tidak dapat transfer ke diri sendiri.", ephemeral=True)
             return
-        saldo_pengirim = await self.bot.economy_repo.get_balance(interaction.guild.id, interaction.user.id)
+        saldo_pengirim = await self.bot.economy_repo.get_balance(ctx.guild.id, ctx.author.id)
         if saldo_pengirim < jumlah:
-            await interaction.response.send_message("Saldo Anda tidak mencukupi.", ephemeral=True)
+            await ctx.send("Saldo Anda tidak mencukupi.", ephemeral=True)
             return
-        await self.bot.economy_repo.update_balance(interaction.guild.id, interaction.user.id, -jumlah)
-        await self.bot.economy_repo.update_balance(interaction.guild.id, pengguna.id, jumlah)
-        await interaction.response.send_message(
+        await self.bot.economy_repo.update_balance(ctx.guild.id, ctx.author.id, -jumlah)
+        await self.bot.economy_repo.update_balance(ctx.guild.id, pengguna.id, jumlah)
+        await ctx.send(
             f"Berhasil transfer {jumlah} koin ke {pengguna.mention}.",
             ephemeral=True,
         )
 
-    @app_commands.command(name="leaderboard", description="Top saldo server.")
-    async def leaderboard(self, interaction: discord.Interaction) -> None:
-        if self.bot.economy_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(name='leaderboard', description='Top saldo server.')
+    async def leaderboard(self, ctx: interactions.SlashContext) -> None:
+        if self.bot.economy_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        top = await self.bot.economy_repo.top_balances(interaction.guild.id)
+        top = await self.bot.economy_repo.top_balances(ctx.guild.id)
         if not top:
-            await interaction.response.send_message("Belum ada data ekonomi.")
+            await ctx.send("Belum ada data ekonomi.")
             return
         description = []
         for idx, (user_id, balance) in enumerate(top, start=1):
-            member = interaction.guild.get_member(user_id) or user_id
-            name = member.mention if isinstance(member, discord.Member) else f"<@{user_id}>"
+            member = ctx.guild.get_member(user_id) or user_id
+            name = member.mention if isinstance(member, interactions.Member) else f"<@{user_id}>"
             description.append(f"**{idx}.** {name} — {balance:,} koin")
-        embed = discord.Embed(title="Papan Peringkat Ekonomi", description="\n".join(description), color=discord.Color.teal())
-        await interaction.response.send_message(embed=embed)
+        embed = interactions.Embed(title="Papan Peringkat Ekonomi", description="\n".join(description), color=interactions.Color.teal())
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="work", description="Kerja untuk mendapatkan penghasilan.")
-    async def work(self, interaction: discord.Interaction) -> None:
-        if self.bot.economy_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(name='work', description='Kerja untuk mendapatkan penghasilan.')
+    async def work(self, ctx: interactions.SlashContext) -> None:
+        if self.bot.economy_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
         reward = random.randint(50, 150)
         flavor = random.choice([
@@ -136,40 +135,40 @@ class Economy(commands.Cog):
             "Menyelesaikan proyek freelance.",
             "Menjual kerajinan tangan di pasar.",
         ])
-        new_balance = await self.bot.economy_repo.update_balance(interaction.guild.id, interaction.user.id, reward)
-        await interaction.response.send_message(f"{flavor} +{reward} koin. Saldo: {new_balance}.")
+        new_balance = await self.bot.economy_repo.update_balance(ctx.guild.id, ctx.author.id, reward)
+        await ctx.send(f"{flavor} +{reward} koin. Saldo: {new_balance}.")
 
-    @app_commands.command(name="gamble", description="Judikan koin Anda.")
-    async def gamble(self, interaction: discord.Interaction, jumlah: app_commands.Range[int, 10, 200_000]) -> None:
-        if self.bot.economy_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    @interactions.slash_command(name='gamble', description='Judikan koin Anda.')
+    async def gamble(self, ctx: interactions.SlashContext, jumlah: app_commands.Range[int, 10, 200_000]) -> None:
+        if self.bot.economy_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        saldo = await self.bot.economy_repo.get_balance(interaction.guild.id, interaction.user.id)
+        saldo = await self.bot.economy_repo.get_balance(ctx.guild.id, ctx.author.id)
         if saldo < jumlah:
-            await interaction.response.send_message("Saldo tidak cukup.", ephemeral=True)
+            await ctx.send("Saldo tidak cukup.", ephemeral=True)
             return
         outcome = random.random()
         if outcome > 0.55:
             gain = jumlah
-            new_balance = await self.bot.economy_repo.update_balance(interaction.guild.id, interaction.user.id, gain)
-            await interaction.response.send_message(f"Anda menang! Saldo kini {new_balance}.")
+            new_balance = await self.bot.economy_repo.update_balance(ctx.guild.id, ctx.author.id, gain)
+            await ctx.send(f"Anda menang! Saldo kini {new_balance}.")
         else:
             loss = -jumlah
-            new_balance = await self.bot.economy_repo.update_balance(interaction.guild.id, interaction.user.id, loss)
-            await interaction.response.send_message(f"Sayang sekali Anda kalah. Saldo kini {new_balance}.")
+            new_balance = await self.bot.economy_repo.update_balance(ctx.guild.id, ctx.author.id, loss)
+            await ctx.send(f"Sayang sekali Anda kalah. Saldo kini {new_balance}.")
 
     shop = app_commands.Group(name="shop", description="Perintah toko server")
 
     @shop.command(name="list", description="Daftar item di toko.")
-    async def shop_list(self, interaction: discord.Interaction) -> None:
-        if self.bot.shop_repo is None or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    async def shop_list(self, ctx: interactions.SlashContext) -> None:
+        if self.bot.shop_repo is None or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        items = await self.bot.shop_repo.list_items(interaction.guild.id)
+        items = await self.bot.shop_repo.list_items(ctx.guild.id)
         if not items:
-            await interaction.response.send_message("Belum ada item di toko.")
+            await ctx.send("Belum ada item di toko.")
             return
-        embed = discord.Embed(title="Toko Server", color=discord.Color.dark_gold())
+        embed = interactions.Embed(title="Toko Server", color=interactions.Color.dark_gold())
         for item in items:
             reward = f" Role: <@&{item['role_reward_id']}>" if item.get("role_reward_id") else ""
             embed.add_field(
@@ -177,28 +176,28 @@ class Economy(commands.Cog):
                 value=f"{item.get('description', 'Tanpa deskripsi.')}{reward}",
                 inline=False,
             )
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
     @shop.command(name="buy", description="Beli item dari toko.")
-    async def shop_buy(self, interaction: discord.Interaction, nama: str) -> None:
-        if any(repo is None for repo in (self.bot.shop_repo, self.bot.economy_repo)) or interaction.guild is None:
-            await interaction.response.send_message("Repositori belum siap atau bukan dalam server.", ephemeral=True)
+    async def shop_buy(self, ctx: interactions.SlashContext, nama: str) -> None:
+        if any(repo is None for repo in (self.bot.shop_repo, self.bot.economy_repo)) or ctx.guild is None:
+            await ctx.send("Repositori belum siap atau bukan dalam server.", ephemeral=True)
             return
-        item = await self.bot.shop_repo.get_item(interaction.guild.id, nama)
+        item = await self.bot.shop_repo.get_item(ctx.guild.id, nama)
         if item is None:
-            await interaction.response.send_message("Item tidak ditemukan.", ephemeral=True)
+            await ctx.send("Item tidak ditemukan.", ephemeral=True)
             return
-        saldo = await self.bot.economy_repo.get_balance(interaction.guild.id, interaction.user.id)
+        saldo = await self.bot.economy_repo.get_balance(ctx.guild.id, ctx.author.id)
         if saldo < item["price"]:
-            await interaction.response.send_message("Saldo tidak cukup.", ephemeral=True)
+            await ctx.send("Saldo tidak cukup.", ephemeral=True)
             return
-        await self.bot.economy_repo.update_balance(interaction.guild.id, interaction.user.id, -item["price"])
+        await self.bot.economy_repo.update_balance(ctx.guild.id, ctx.author.id, -item["price"])
         if item.get("role_reward_id"):
-            role = interaction.guild.get_role(int(item["role_reward_id"]))
-            if role and isinstance(interaction.user, discord.Member):
-                await interaction.user.add_roles(role, reason="Pembelian dari toko bot")
-        await interaction.response.send_message(f"Berhasil membeli {item['item_name']} seharga {item['price']} koin!", ephemeral=True)
+            role = ctx.guild.get_role(int(item["role_reward_id"]))
+            if role and isinstance(ctx.author, interactions.Member):
+                await ctx.author.add_roles(role, reason="Pembelian dari toko bot")
+        await ctx.send(f"Berhasil membeli {item['item_name']} seharga {item['price']} koin!", ephemeral=True)
 
 
-async def setup(bot: ForUS) -> None:
-    await bot.add_cog(Economy(bot))
+def setup(bot: ForUS) -> None:
+    Economy(bot)
