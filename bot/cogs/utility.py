@@ -630,36 +630,63 @@ class Utility(interactions.Extension):
         await ctx.send(embed=embed, ephemeral=True)
 
     @interactions.slash_command(name='jadwalsholat', description='Menampilkan jadwal sholat harian berdasarkan negara.')
-    @app_commands.describe(
-        negara="Pilih negara sumber jadwal.",
-        lokasi="Masukkan ID kota (Indonesia) atau kode zona (Malaysia).",
-        tahun="Tahun dalam format YYYY. Jika kosong, memakai tahun saat ini.",
-        bulan="Nomor bulan (1-12). Jika kosong, memakai bulan saat ini.",
-        tanggal="Tanggal dalam bulan (1-31). Jika kosong, memakai hari ini.",
+    @interactions.slash_option(
+        name="negara",
+        description="Pilih negara sumber jadwal.",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+        choices=[
+            interactions.SlashCommandChoice(name="Indonesia", value="indonesia"),
+            interactions.SlashCommandChoice(name="Malaysia", value="malaysia"),
+        ],
+        autocomplete=True,
     )
-    @app_commands.choices(
-        negara=[
-            app_commands.Choice(name="Indonesia", value="indonesia"),
-            app_commands.Choice(name="Malaysia", value="malaysia"),
-        ]
+    @interactions.slash_option(
+        name="lokasi",
+        description="Masukkan ID kota (Indonesia) atau kode zona (Malaysia).",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+        autocomplete=True,
+    )
+    @interactions.slash_option(
+        name="tahun",
+        description="Tahun dalam format YYYY. Jika kosong, memakai tahun saat ini.",
+        opt_type=interactions.OptionType.INTEGER,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="bulan",
+        description="Nomor bulan (1-12). Jika kosong, memakai bulan saat ini.",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=12,
+        required=False,
+    )
+    @interactions.slash_option(
+        name="tanggal",
+        description="Tanggal dalam bulan (1-31). Jika kosong, memakai hari ini.",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=31,
+        required=False,
     )
     async def jadwalsholat(
         self,
         ctx: interactions.SlashContext,
-        negara: app_commands.Choice[str],
+        negara: str,
         lokasi: str,
         tahun: int | None = None,
         bulan: int | None = None,
         tanggal: int | None = None,
     ) -> None:
         try:
-            target_date = self._build_target_date(negara.value, tahun, bulan, tanggal)
+            target_date = self._build_target_date(negara, tahun, bulan, tanggal)
         except PrayerAPIError as exc:
             await ctx.send(str(exc), ephemeral=True)
             return
 
         try:
-            if negara.value == "indonesia":
+            if negara == "indonesia":
                 month_payload = await self._fetch_month_indonesia(lokasi, target_date.year, target_date.month)
                 day_payload = self._extract_indonesia_day(month_payload, target_date)
                 embed = self._build_embed_indonesia(lokasi, month_payload, day_payload)
@@ -668,48 +695,39 @@ class Utility(interactions.Extension):
                 day_payload = self._extract_malaysia_day(month_payload, target_date)
                 embed = self._build_embed_malaysia(lokasi, target_date, month_payload, day_payload)
         except PrayerAPIError as exc:
-            if interaction.response.is_done():
-                await ctx.send(str(exc), ephemeral=True)
-            else:
-                await ctx.send(str(exc), ephemeral=True)
+            await ctx.send(str(exc), ephemeral=True)
             return
         except Exception:  # noqa: BLE001
             logger = getattr(self.bot, "log", None)
             if logger:
                 logger.exception("Gagal mengambil jadwal sholat")
             message = "Terjadi kesalahan saat mengambil jadwal sholat. Coba lagi nanti."
-            if interaction.response.is_done():
-                await ctx.send(message, ephemeral=True)
-            else:
-                await ctx.send(message, ephemeral=True)
+            await ctx.send(message, ephemeral=True)
             return
 
-        if interaction.response.is_done():
-            await ctx.send(embed=embed)
-        else:
-            await ctx.send(embed=embed)
+        await ctx.send(embed=embed)
 
     @jadwalsholat.autocomplete("lokasi")
     async def jadwalsholat_lokasi_autocomplete(
         self,
-        ctx: interactions.SlashContext,
-        current: str,
-    ) -> list[app_commands.Choice[str]]:
-        current = current.strip()
+        ctx: interactions.AutocompleteContext,
+    ) -> None:
+        current = ctx.input_text.strip()
         if len(current) < 2:
-            return []
+            await ctx.send(choices=[])
+            return
 
-        negara_choice = getattr(interaction.namespace, "negara", None)
-        if not negara_choice:
-            return []
-
-        negara_value = getattr(negara_choice, "value", negara_choice)
+        # Get negara from kwargs
+        negara_value = ctx.kwargs.get("negara")
+        if not negara_value:
+            await ctx.send(choices=[])
+            return
 
         try:
             if negara_value == "indonesia":
                 results = await self._search_indonesia_locations(current)
                 choices = [
-                    app_commands.Choice(name=self._truncate_label(f"{item.get('lokasi', 'Tidak diketahui')} ({item.get('id')})"), value=str(item.get("id")))
+                    interactions.SlashCommandChoice(name=self._truncate_label(f"{item.get('lokasi', 'Tidak diketahui')} ({item.get('id')})"), value=str(item.get("id")))
                     for item in results[:25]
                 ]
             elif negara_value == "malaysia":
@@ -722,13 +740,15 @@ class Utility(interactions.Extension):
                     label = f"{code} • {negeri}" if negeri else code
                     if daerah:
                         label = f"{label} – {daerah}"
-                    choices.append(app_commands.Choice(name=self._truncate_label(label), value=str(code)))
+                    choices.append(interactions.SlashCommandChoice(name=self._truncate_label(label), value=str(code)))
             else:
-                return []
+                await ctx.send(choices=[])
+                return
         except PrayerAPIError:
-            return []
+            await ctx.send(choices=[])
+            return
 
-        return choices
+        await ctx.send(choices=choices)
 
     def _build_target_date(
         self,
