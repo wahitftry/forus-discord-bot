@@ -36,7 +36,7 @@ def _truncate(value: str | None, limit: int = 180) -> str:
     return value[: limit - 3] + "..."
 
 
-@app_commands.default_permissions(manage_guild=True)
+# Permissions moved to command decorators
 class Audit(interactions.Extension):
     # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:

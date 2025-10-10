@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 import interactions
 
 from bot.services.automod import AutomodEngine
-RULE_CHOICES: list[app_commands.Choice[str]] = [
-    app_commands.Choice(name="Filter Tautan", value="link_filter"),
-    app_commands.Choice(name="Batas Mention", value="mention_limit"),
-    app_commands.Choice(name="Huruf Kapital", value="caps"),
+RULE_CHOICES: list[interactions.SlashCommandChoice] = [
+    interactions.SlashCommandChoice(name="Filter Tautan", value="link_filter"),
+    interactions.SlashCommandChoice(name="Batas Mention", value="mention_limit"),
+    interactions.SlashCommandChoice(name="Huruf Kapital", value="caps"),
 ]
 
 
@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from bot.main import ForUS
 
 
-@app_commands.default_permissions(manage_guild=True)
 class AutoMod(interactions.Extension):
     # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:

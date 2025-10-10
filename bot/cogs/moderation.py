@@ -9,7 +9,6 @@ if TYPE_CHECKING:
     from bot.main import ForUS
 
 
-@app_commands.default_permissions(kick_members=True)
 class Moderation(interactions.Extension):
     # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:
@@ -103,8 +102,15 @@ class Moderation(interactions.Extension):
         await self._send_log(guild, embed)
 
     @interactions.slash_command(name='clear', description='Menghapus sejumlah pesan terakhir.')
-    @app_commands.describe(jumlah="Jumlah pesan yang ingin dihapus (1-100)")
-    async def clear(self, ctx: interactions.SlashContext, jumlah: app_commands.Range[int, 1, 100]) -> None:
+    @interactions.slash_option(
+        name="jumlah",
+        description="Jumlah pesan yang ingin dihapus (1-100)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=100,
+        required=True,
+    )
+    async def clear(self, ctx: interactions.SlashContext, jumlah: int) -> None:
         channel = ctx.channel
         if not isinstance(channel, interactions.GuildText):
             await ctx.send("Perintah ini hanya bisa di channel teks.", ephemeral=True)
@@ -173,11 +179,31 @@ class Moderation(interactions.Extension):
         await ctx.send(f"Peringatan dengan ID {warn_id} telah dihapus.", ephemeral=True)
 
     @interactions.slash_command(name='timeout', description='Nonaktifkan sementara kemampuan chat pengguna.')
+    @interactions.slash_option(
+        name="member",
+        description="Member yang akan di-timeout",
+        opt_type=interactions.OptionType.USER,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="durasi_menit",
+        description="Durasi timeout dalam menit (1-10080)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=10_080,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="alasan",
+        description="Alasan timeout",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
     async def timeout(
         self,
         ctx: interactions.SlashContext,
         member: interactions.Member,
-        durasi_menit: app_commands.Range[int, 1, 10_080],
+        durasi_menit: int,
         alasan: str | None = None,
     ) -> None:
         await self._apply_timeout(

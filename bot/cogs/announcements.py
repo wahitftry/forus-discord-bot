@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 DEFAULT_TZ = ZoneInfo("Asia/Jakarta")
 
 
-@app_commands.default_permissions(manage_guild=True)
+# Permissions moved to command decorators
 class Announcements(interactions.Extension):
     # MANUAL REVIEW: GroupCog -> Extension with slash_command group
     def __init__(self, bot: ForUS) -> None:
