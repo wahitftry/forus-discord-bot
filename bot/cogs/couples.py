@@ -247,9 +247,9 @@ class Couples(interactions.Extension):
                 newly_unlocked.append((milestone["title"], milestone["description"]))
         return newly_unlocked
 
-    def _gift_choices(self) -> Sequence[app_commands.Choice[str]]:
+    def _gift_choices(self) -> Sequence[interactions.SlashCommandChoice]:
         return [
-            app_commands.Choice(
+            interactions.SlashCommandChoice(
                 name=f"{gift['emoji']} {gift['name']} — {gift['cost']} koin",
                 value=str(gift["key"]),
             )
@@ -357,7 +357,18 @@ class Couples(interactions.Extension):
         return member
 
     @interactions.slash_command(name='propose', description='Ajukan pasangan kepada seseorang spesial.')
-    @app_commands.describe(pasangan="Pengguna yang ingin diajak menjadi pasangan", pesan="Pesan manis opsional")
+    @interactions.slash_option(
+        name="pasangan",
+        description="Pengguna yang ingin diajak menjadi pasangan",
+        opt_type=interactions.OptionType.USER,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="pesan",
+        description="Pesan manis opsional",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
     async def propose(self, ctx: interactions.SlashContext, pasangan: interactions.User, pesan: Optional[str] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
@@ -415,13 +426,25 @@ class Couples(interactions.Extension):
         except discord.Forbidden:
             pass
 
-    @app_commands.choices(keputusan=[
-        app_commands.Choice(name="Terima", value="accept"),
-        app_commands.Choice(name="Tolak", value="reject"),
-    ])
-    @app_commands.describe(keputusan="Jawabanmu atas lamaran", pesan="Pesan opsional untuk pasangan")
+    
     @interactions.slash_command(name='respond', description='Jawab lamaran pasangan yang masuk.')
-    async def respond(self, ctx: interactions.SlashContext, keputusan: app_commands.Choice[str], pesan: Optional[str] = None) -> None:
+    @interactions.slash_option(
+        name="keputusan",
+        description="Jawabanmu atas lamaran",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+        choices=[
+            interactions.SlashCommandChoice(name="Terima", value="accept"),
+            interactions.SlashCommandChoice(name="Tolak", value="reject"),
+        ],
+    )
+    @interactions.slash_option(
+        name="pesan",
+        description="Pesan opsional untuk pasangan",
+        opt_type=interactions.OptionType.STRING,
+        required=False,
+    )
+    async def respond(self, ctx: interactions.SlashContext, keputusan: str, pesan: Optional[str] = None) -> None:
         repo_info = await self._get_repo(interaction)
         if repo_info is None:
             return
@@ -442,7 +465,7 @@ class Couples(interactions.Extension):
         initiator_id = pending.partner_id(ctx.author.id)
         initiator = await self._resolve_member(ctx.guild, initiator_id) if initiator_id else None
 
-        if keputusan.value == "accept":
+        if keputusan == "accept":
             updated = await repo.accept_proposal(pending.id)
             if updated is None or updated.status != "active":
                 await ctx.send("Lamaran sudah tidak berlaku.", ephemeral=True)

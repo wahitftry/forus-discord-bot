@@ -55,11 +55,30 @@ class Reminders(interactions.Extension):
             await self.bot.reminder_repo.delete(reminder_id)
 
     @interactions.slash_command(name='create', description='Buat pengingat baru dengan durasi tertentu.')
-    @app_commands.describe(durasi_menit="Durasi sebelum pengingat (1-10080 menit)", pesan="Pesan pengingat", channel="Channel tujuan (opsional)")
+    @interactions.slash_option(
+        name="durasi_menit",
+        description="Durasi sebelum pengingat (1-10080 menit)",
+        opt_type=interactions.OptionType.INTEGER,
+        min_value=1,
+        max_value=10_080,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="pesan",
+        description="Pesan pengingat",
+        opt_type=interactions.OptionType.STRING,
+        required=True,
+    )
+    @interactions.slash_option(
+        name="channel",
+        description="Channel tujuan (opsional)",
+        opt_type=interactions.OptionType.CHANNEL,
+        required=False,
+    )
     async def create(
         self,
         ctx: interactions.SlashContext,
-        durasi_menit: app_commands.Range[int, 1, 10_080],
+        durasi_menit: int,
         pesan: str,
         channel: interactions.GuildText | None = None,
     ) -> None:
