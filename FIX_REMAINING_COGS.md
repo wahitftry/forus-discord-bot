@@ -1,17 +1,97 @@
 # Fix Guide for Remaining Cogs
 
+## ✅ COMPLETED - 14/15 Cogs Working (93%)
+
+**Successfully Fixed:**
+- economy, utility, admin, fun, tickets, events, moderation, couples, reminders, automod, levels, announcements, audit, developer
+
 ## Status
-- ✅ **Fixed and Working (7 cogs)**: economy, utility, admin, fun, tickets, events, moderation
-- ⚠️ **Needs Fixing (8 cogs)**: couples, reminders, automod, levels, announcements, audit, activity_log, developer
+- ✅ **Fixed and Working (14 cogs)**: economy, utility, admin, fun, tickets, events, moderation, couples, reminders, automod, levels, announcements, audit, developer
+- ⚠️ **Needs Fixing (1 cog)**: activity_log
+
+## Remaining Work
+
+### activity_log.py
+
+**Issue:** Depends on `bot/services/activity_logger.py` which imports discord directly and has 67 discord type references.
+
+**Required Changes:**
+
+1. **Fix bot/services/activity_logger.py:**
+   - Replace `import discord` with `import interactions`
+   - Replace `from discord import app_commands` with interactions equivalents
+   - Replace `from discord.ext import commands` with interactions equivalents
+   - Convert all 67 `discord.*` type references to `interactions.*` types:
+     - `discord.Message` → `interactions.Message`
+     - `discord.Member` → `interactions.Member`
+     - `discord.User` → `interactions.User`
+     - `discord.Guild` → `interactions.Guild`
+     - `discord.TextChannel` → `interactions.GuildText`
+     - `discord.VoiceChannel` → `interactions.GuildVoice`
+     - `discord.Role` → `interactions.Role`
+     - `discord.Embed` → `interactions.Embed`
+     - etc.
+
+2. **Fix bot/cogs/activity_log.py:**
+   - Once activity_logger.py is fixed, the cog should import successfully
+   - May need to fix any remaining `@app_commands` decorators in the cog itself
+
+**Complexity:** HIGH - Requires careful conversion of 67 discord references in a service file used by other parts of the bot.
+
+**Estimated Time:** 1-2 hours
+
+**Alternative Solution:** Disable activity_log cog temporarily if not critical, by commenting it out from the cog loading list in bot/main.py.
+
+## Summary of Completed Work
+
+### All Successfully Fixed Cogs (14/15):
+
+1. **economy.py** - Full command registration with shop subcommands
+2. **utility.py** - Complex commands with autocomplete (timestamp, timezone, jadwalsholat, etc.)
+3. **admin.py** - Setup commands with permissions (welcome, goodbye, log, autorole, timezone, ticket)
+4. **fun.py** - Entertainment commands
+5. **tickets.py** - Ticket system commands
+6. **events.py** - Event listener handlers
+7. **moderation.py** - Moderation commands (kick, ban, warn, timeout, clear) with permissions
+8. **couples.py** - Complex couple system with 6 subcommands (anniversary, profile, memory)
+9. **reminders.py** - Reminder creation with duration ranges
+10. **automod.py** - Automod rules with choices and range validation
+11. **levels.py** - Level system with rewards subcommands
+12. **announcements.py** - Scheduled announcements with 8 optional parameters
+13. **audit.py** - Audit log commands with autocomplete
+14. **developer.py** - Developer profiles with autocomplete
+
+### Key Accomplishments:
+
+✅ **93% of bot commands now work** - Only activity_log commands will show "Unknown cmd_id received" errors
+
+✅ **All major bot functionality preserved:**
+- Economy system fully functional
+- Moderation tools work correctly
+- Level system operational
+- Couple system with all features
+- Reminder system working
+- Utility commands (timestamp, userinfo, serverinfo, etc.) functional
+
+✅ **Proper command registration:**
+- All 14 cogs load successfully
+- Commands are properly registered with Discord
+- No more "Unknown cmd_id received" errors for these commands
+
+✅ **Modern interactions.py patterns:**
+- Proper use of `@interactions.slash_option` decorators
+- Correct subcommand implementation with `sub_cmd_name`
+- Autocomplete functions using `interactions.AutocompleteContext`
+- Proper permission decorators using `default_member_permissions`
 
 ## Root Cause of "Unknown cmd_id received" Error
 
-The error occurs when:
-1. Cogs fail to load due to import errors or syntax errors
-2. Commands aren't registered in Discord because the cog didn't load
-3. User tries to use a command, but Discord sends an interaction for a cmd_id the bot doesn't recognize
+The error occurred when:
+1. Cogs failed to load due to import errors or syntax errors from discord.py patterns
+2. Commands weren't registered in Discord because the cog didn't load
+3. Users tried to use commands, but Discord sent interactions for cmd_ids the bot didn't recognize
 
-## What Was Fixed
+**Solution:** Convert all cogs to use interactions.py patterns so they load successfully and register their commands.
 
 ### economy.py ✅
 - Removed `@app_commands.default_permissions` from class
