@@ -93,3 +93,7 @@ tests/__pycache__/
 # Misc
 .DS_Store
 Thumbs.db
+
+# Backup files from migration
+*.bak
+*.bak2

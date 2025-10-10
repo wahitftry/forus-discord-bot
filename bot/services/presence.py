@@ -5,8 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-import discord
-from discord.ext import commands
+import interactions
 
 from ..config import PresenceActivityConfig, RichPresenceConfig
 from .logging import get_logger
@@ -56,7 +55,7 @@ class PresenceSnapshot:
 
 
 class RichPresenceManager:
-    def __init__(self, bot: commands.Bot, config: RichPresenceConfig, *, version: str = "dev") -> None:
+    def __init__(self, bot: interactions.Client, config: RichPresenceConfig, *, version: str = "dev") -> None:
         self.bot = bot
         self.config = config
         self.version = version
@@ -157,11 +156,12 @@ class RichPresenceManager:
 
         commands_count = 0
         try:
-            commands_count = len(self.bot.tree.get_commands())  # type: ignore[attr-defined]
+            # interactions.py doesn't have tree, commands are registered directly
+            commands_count = len(getattr(self.bot, "interactions", {}))
         except Exception:  # noqa: BLE001
             commands_count = 0
 
-        cog_count = len(getattr(self.bot, "cogs", {}))
+        cog_count = len(getattr(self.bot, "ext", {}))
 
         latency = float(getattr(self.bot, "latency", 0.0) or 0.0) * 1000
         shard_count = int(getattr(self.bot, "shard_count", 1) or 1)
@@ -205,61 +205,59 @@ class RichPresenceManager:
         return self._last_snapshot
 
 
-def _resolve_status(value: Optional[str]) -> discord.Status | None:
+def _resolve_status(value: Optional[str]) -> interactions.Status | None:
     if value is None:
         return None
     normalized = value.strip().lower()
     if not normalized:
         return None
     mapping = {
-        "online": discord.Status.online,
-        "idle": discord.Status.idle,
-        "dnd": discord.Status.do_not_disturb,
-        "do_not_disturb": discord.Status.do_not_disturb,
-        "busy": discord.Status.do_not_disturb,
-        "away": discord.Status.idle,
-        "invisible": discord.Status.invisible,
-        "offline": discord.Status.offline,
+        "online": interactions.Status.ONLINE,
+        "idle": interactions.Status.IDLE,
+        "dnd": interactions.Status.DND,
+        "do_not_disturb": interactions.Status.DND,
+        "busy": interactions.Status.DND,
+        "away": interactions.Status.IDLE,
+        "invisible": interactions.Status.INVISIBLE,
+        "offline": interactions.Status.OFFLINE,
     }
-    return mapping.get(normalized, discord.Status.online)
+    return mapping.get(normalized, interactions.Status.ONLINE)
 
 
-def _build_activity(template: PresenceActivityConfig, name: str, details: Optional[str], state: Optional[str]) -> discord.BaseActivity:
+def _build_activity(template: PresenceActivityConfig, name: str, details: Optional[str], state: Optional[str]) -> interactions.Activity:
     activity_type = (template.type or "playing").lower()
-    if activity_type == "streaming":
-        return discord.Streaming(name=name, url=template.url or "https://twitch.tv")
-    if activity_type == "custom":
-        emoji = None
-        if template.emoji:
-            try:
-                emoji = discord.PartialEmoji.from_str(template.emoji)
-            except Exception:  # noqa: BLE001
-                emoji = None
-        return discord.CustomActivity(name=name, emoji=emoji)
-
-    mapped = _activity_mapping().get(activity_type, discord.ActivityType.playing)
-    kwargs: dict[str, Any] = {"name": name, "type": mapped}
-    if template.url and mapped is discord.ActivityType.streaming:
-        kwargs["url"] = template.url
-    if details:
-        kwargs["details"] = details
-    if state:
-        kwargs["state"] = state
-    return discord.Activity(**kwargs)
+    
+    # Map activity types
+    type_mapping = {
+        "playing": interactions.ActivityType.GAME,
+        "watching": interactions.ActivityType.WATCHING,
+        "listening": interactions.ActivityType.LISTENING,
+        "competing": interactions.ActivityType.COMPETING,
+        "streaming": interactions.ActivityType.STREAMING,
+        "custom": interactions.ActivityType.CUSTOM,
+    }
+    
+    activity_type_enum = type_mapping.get(activity_type, interactions.ActivityType.GAME)
+    
+    return interactions.Activity(
+        name=name,
+        type=activity_type_enum,
+        url=template.url if activity_type == "streaming" else None,
+    )
 
 
-_activity_map_cache: dict[str, discord.ActivityType] | None = None
+_activity_map_cache: dict[str, interactions.ActivityType] | None = None
 
 
-def _activity_mapping() -> dict[str, discord.ActivityType]:
+def _activity_mapping() -> dict[str, interactions.ActivityType]:
     global _activity_map_cache
     if _activity_map_cache is None:
         _activity_map_cache = {
-            "playing": discord.ActivityType.playing,
-            "watching": discord.ActivityType.watching,
-            "listening": discord.ActivityType.listening,
-            "competing": discord.ActivityType.competing,
-            "streaming": discord.ActivityType.streaming,
+            "playing": interactions.ActivityType.GAME,
+            "watching": interactions.ActivityType.WATCHING,
+            "listening": interactions.ActivityType.LISTENING,
+            "competing": interactions.ActivityType.COMPETING,
+            "streaming": interactions.ActivityType.STREAMING,
         }
     return _activity_map_cache
 
