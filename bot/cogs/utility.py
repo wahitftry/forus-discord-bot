@@ -601,7 +601,7 @@ class Utility(interactions.Extension):
 
         embed = interactions.Embed(title="Statistik Bot", color=interactions.Color.purple())
         embed.add_field(name="Versi Python", value=platform.python_version(), inline=True)
-        embed.add_field(name="discord.py", value=discord.__version__, inline=True)
+        embed.add_field(name="interactions.py", value=interactions.__version__, inline=True)
         embed.add_field(name="Shard", value=str(shard_count), inline=True)
         embed.add_field(name="Guild", value=str(len(self.bot.guilds)), inline=True)
         embed.add_field(name="Pengguna unik", value=str(len(self.bot.users)), inline=True)

@@ -95,23 +95,23 @@ class ForUS(interactions.Client):
         self.announcement_repo = AnnouncementRepository(self.db)
 
     async def _load_cogs(self) -> None:
-        for extension in (
-            "bot.cogs.utility",
-            "bot.cogs.developer",
-            "bot.cogs.moderation",
-            "bot.cogs.admin",
-            "bot.cogs.economy",
-            "bot.cogs.reminders",
-            "bot.cogs.couples",
-            "bot.cogs.fun",
-            "bot.cogs.tickets",
-            "bot.cogs.events",
-            "bot.cogs.automod",
-            "bot.cogs.levels",
-            "bot.cogs.announcements",
-            "bot.cogs.audit",
-            "bot.cogs.activity_log",
-        ):
+        base_package = f"{__package__}.cogs" if __package__ else "bot.cogs"
+        base_path = Path(__file__).parent / "cogs"
+        if not base_path.exists():
+            self.log.warning("Direktori cogs tidak ditemukan di %s", base_path)
+            return
+
+        discovered: list[str] = []
+        for module in sorted(base_path.glob("*.py")):
+            if module.name.startswith("_") or module.suffix != ".py":
+                continue
+            discovered.append(f"{base_package}.{module.stem}")
+
+        if not discovered:
+            self.log.warning("Tidak menemukan berkas cog di %s", base_path)
+            return
+
+        for extension in discovered:
             try:
                 self.load_extension(extension)
                 self.log.info("Berhasil memuat extension %s", extension)
