@@ -202,7 +202,7 @@ class ActivityLogger:
     async def log_message_sent(self, message: interactions.Message, *, channel: Optional[interactions.GuildText] = None) -> bool:
         if message.guild is None:
             return False
-        embed = self._base_embed("Pesan Baru", color=interactions.Color.blurple())
+        embed = self._base_embed("Pesan Baru", color=interactions.Color.from_hex("#5865F2"))  # blurple
         embed.add_field(name="Pengguna", value=format_user(message.author), inline=False)
         embed.add_field(name="Channel", value=message.channel.mention)
         if message.content:
@@ -224,7 +224,7 @@ class ActivityLogger:
             return False
         if before.content == after.content:
             return False
-        embed = self._base_embed("Pesan Diedit", color=interactions.Color.gold())
+        embed = self._base_embed("Pesan Diedit", color=interactions.Color.from_hex("#F1C40F"))
         embed.add_field(name="Pengguna", value=format_user(after.author), inline=False)
         embed.add_field(name="Channel", value=after.channel.mention)
         if before.content:
@@ -271,7 +271,7 @@ class ActivityLogger:
 
     async def log_member_join(self, member: interactions.Member, *, channel: Optional[interactions.GuildText] = None) -> bool:
         guild = member.guild
-        embed = self._base_embed("Anggota Bergabung", color=interactions.Color.green())
+        embed = self._base_embed("Anggota Bergabung", color=interactions.Color.from_hex("#2ECC71"))  # green
         embed.add_field(name="Pengguna", value=format_user(member), inline=False)
         embed.add_field(name="Akun dibuat", value=interactions.Timestamp.fromdatetime(member.created_at).format(interactions.TimestampStyles.F))
         if member.bot:
@@ -279,7 +279,7 @@ class ActivityLogger:
         return await self.send_embed(guild, embed, channel=channel, category="members")
 
     async def log_member_remove(self, member: interactions.Member | interactions.User, guild: interactions.Guild, *, channel: Optional[interactions.GuildText] = None) -> bool:
-        embed = self._base_embed("Anggota Keluar", color=interactions.Color.orange())
+        embed = self._base_embed("Anggota Keluar", color=interactions.Color.from_hex("#E67E22"))  # orange
         embed.add_field(name="Pengguna", value=format_user(member), inline=False)
         joined_at = getattr(member, "joined_at", None)
         if joined_at:
@@ -352,7 +352,7 @@ class ActivityLogger:
         if not changes:
             return False
 
-        embed = self._base_embed("Aktivitas Voice", color=interactions.Color.purple())
+        embed = self._base_embed("Aktivitas Voice", color=interactions.Color.from_hex("#9B59B6"))
         embed.add_field(name="Pengguna", value=format_user(member), inline=False)
         embed.add_field(name="Perubahan", value="\n".join(changes), inline=False)
         return await self.send_embed(guild, embed, channel=channel, category="voice")
@@ -367,7 +367,7 @@ class ActivityLogger:
         new_name: str | None = None,
         channel: Optional[interactions.GuildText] = None,
     ) -> bool:
-        embed = self._base_embed("Channel", color=interactions.Color.teal())
+        embed = self._base_embed("Channel", color=interactions.Color.from_hex("#1ABC9C"))
         embed.add_field(name="Aksi", value=action)
         embed.add_field(name="Channel", value=getattr(channel_obj, "mention", channel_obj.name))
         if old_name or new_name:
@@ -443,7 +443,7 @@ class ActivityLogger:
         if guild is None:
             return False
         title = "Slash Command" if succeeded else "Slash Command Error"
-        color = interactions.Color.green() if succeeded else interactions.Color.red()
+        color = interactions.Color.from_hex("#2ECC71") if succeeded else interactions.Color.from_hex("#ED4245")  # green : red
         embed = self._base_embed(title, color=color)
         embed.add_field(name="Pengguna", value=format_user(interaction.author), inline=False)
         if interaction.channel:
